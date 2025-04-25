@@ -1,9 +1,10 @@
-# ФАЙЛ: bot.py (Только новые токены Ton.fun с ликвидностью на STON.fi + топ 30 токенов)
+# ФАЙЛ: bot.py (Только новые токены Ton.fun через парсинг сайта + топ 30 токенов)
 
 import os
 import logging
 import aiohttp
 import asyncio
+from bs4 import BeautifulSoup
 from dotenv import load_dotenv
 from telegram import Update
 from telegram.ext import ApplicationBuilder, CommandHandler, ContextTypes
@@ -24,14 +25,22 @@ announced_tokens = set()
 latest_listings = "Данные ещё загружаются..."
 
 async def fetch_tonfun_tokens():
-    url = "https://ton.fun/api/coins/list"
+    url = "https://ton.fun/tokens"
     headers = {"User-Agent": "Mozilla/5.0 (compatible; TelegramBot/1.0)"}
     async with aiohttp.ClientSession() as session:
         async with session.get(url, headers=headers) as resp:
             if resp.status != 200:
-                raise Exception(f"Ошибка Ton.fun API: {resp.status}")
-            data = await resp.json()
-            return data.get("data", [])
+                raise Exception(f"Ошибка Ton.fun: {resp.status}")
+            html = await resp.text()
+            soup = BeautifulSoup(html, "html.parser")
+            tokens = []
+            for card in soup.select("a[href^='/token/']"):
+                link = card.get("href")
+                symbol = card.text.strip() or "UNKNOWN"
+                if link and symbol:
+                    address = link.split("/token/")[-1]
+                    tokens.append({"jetton_address": address, "symbol": symbol})
+            return tokens
 
 async def fetch_stonfi_pools():
     url = "https://api.ston.fi/v1/stats/pool"
@@ -48,7 +57,6 @@ async def update_listings(context: ContextTypes.DEFAULT_TYPE = None):
         tonfun_tokens = await fetch_tonfun_tokens()
         stonfi_pools = await fetch_stonfi_pools()
 
-        # Сопоставляем токены с пулами
         liquid_tokens = {}
         for pool in stonfi_pools:
             base = pool.get("base_address")
@@ -73,7 +81,7 @@ async def update_listings(context: ContextTypes.DEFAULT_TYPE = None):
 
         for token in tonfun_tokens:
             address = token.get("jetton_address")
-            symbol = token.get("symbol") or token.get("name") or "UNKNOWN"
+            symbol = token.get("symbol")
             if not address or address in announced_tokens:
                 continue
             if address in liquid_tokens:
@@ -102,7 +110,7 @@ async def top30(update: Update, context: ContextTypes.DEFAULT_TYPE):
         message = "🆕 *Последние 30 токенов Ton.fun:*\n"
         for idx, token in enumerate(tokens[:30], start=1):
             address = token.get("jetton_address")
-            symbol = token.get("symbol") or token.get("name") or "UNKNOWN"
+            symbol = token.get("symbol")
             tonviewer_link = f"https://tonviewer.com/{address}"
             message += f"{idx}. **{symbol}** — [Tonviewer]({tonviewer_link})\n"
 
@@ -113,7 +121,7 @@ async def top30(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     chat_id = update.effective_chat.id
-    await update.message.reply_text("Привет! Я отслеживаю новые токены Ton.fun с ликвидностью на STON.fi!\nКоманды:\n/newlistings — Новые токены с ликвидностью\n/top30 — Последние 30 токенов Ton.fun")
+    await update.message.reply_text("👋 *Добро пожаловать!*\n\nЯ отслеживаю новые токены Ton.fun с ликвидностью на STON.fi!\n\n*Команды:*\n/newlistings — Новые токены с ликвидностью\n/top30 — Последние 30 токенов Ton.fun", parse_mode='Markdown')
     context.job_queue.run_repeating(update_listings, interval=1800, first=5, data=chat_id)
 
 async def newlistings(update: Update, context: ContextTypes.DEFAULT_TYPE):
