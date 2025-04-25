@@ -68,8 +68,7 @@ async def update_listings(context: ContextTypes.DEFAULT_TYPE = None):
                 except ZeroDivisionError:
                     continue
 
-        message = "🆕 *Новые токены Ton.fun с ликвидностью:*
-"
+        message = "🆕 *Новые токены Ton.fun с ликвидностью:*\n"
         found = 0
 
         for token in tonfun_tokens:
@@ -80,16 +79,14 @@ async def update_listings(context: ContextTypes.DEFAULT_TYPE = None):
             if address in liquid_tokens:
                 symbol_disp, price, unit = liquid_tokens[address]
                 tonviewer_link = f"https://tonviewer.com/{address}"
-                message += f"{found+1}. **{symbol}** — {price} {unit} — [Tonviewer]({tonviewer_link})
-"
+                message += f"{found+1}. **{symbol}** — {price} {unit} — [Tonviewer]({tonviewer_link})\n"
                 announced_tokens.add(address)
                 found += 1
                 if found >= 10:
                     break
 
         if found == 0:
-            message += "
-Нет новых токенов с ликвидностью."
+            message += "\nНет новых токенов с ликвидностью."
 
         latest_listings = message + f"\n\n_Обновлено: {datetime.utcnow().strftime('%d.%m.%Y %H:%M UTC')}_"
 
@@ -102,14 +99,12 @@ async def update_listings(context: ContextTypes.DEFAULT_TYPE = None):
 async def top30(update: Update, context: ContextTypes.DEFAULT_TYPE):
     try:
         tokens = await fetch_tonfun_tokens()
-        message = "🆕 *Последние 30 токенов Ton.fun:*
-"
+        message = "🆕 *Последние 30 токенов Ton.fun:*\n"
         for idx, token in enumerate(tokens[:30], start=1):
             address = token.get("jetton_address")
             symbol = token.get("symbol") or token.get("name") or "UNKNOWN"
             tonviewer_link = f"https://tonviewer.com/{address}"
-            message += f"{idx}. **{symbol}** — [Tonviewer]({tonviewer_link})
-"
+            message += f"{idx}. **{symbol}** — [Tonviewer]({tonviewer_link})\n"
 
         await update.message.reply_text(message, parse_mode='Markdown')
     except Exception as e:
@@ -118,10 +113,7 @@ async def top30(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     chat_id = update.effective_chat.id
-    await update.message.reply_text("Привет! Я отслеживаю новые токены Ton.fun с ликвидностью на STON.fi!
-Команды:
-/newlistings — Новые токены с ликвидностью
-/top30 — Последние 30 токенов Ton.fun")
+    await update.message.reply_text("Привет! Я отслеживаю новые токены Ton.fun с ликвидностью на STON.fi!\nКоманды:\n/newlistings — Новые токены с ликвидностью\n/top30 — Последние 30 токенов Ton.fun")
     context.job_queue.run_repeating(update_listings, interval=1800, first=5, data=chat_id)
 
 async def newlistings(update: Update, context: ContextTypes.DEFAULT_TYPE):
