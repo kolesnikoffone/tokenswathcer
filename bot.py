@@ -1,4 +1,4 @@
-# ФАЙЛ: bot.py (с красивыми названиями токенов)
+# ФАЙЛ: bot.py (улучшенная версия с правильными названиями токенов DeDust и STON.fi)
 
 import requests
 import logging
@@ -22,11 +22,10 @@ logging.basicConfig(
     level=logging.INFO
 )
 
-# Глобальная переменная для кэширования листингов
+# Глобальные кэши для токенов
 latest_listings = "Данные еще загружаются..."
-
-# Кэш для токенов STON.fi
 stonfi_assets = {}
+dedust_jettons = {}
 
 async def load_stonfi_assets():
     global stonfi_assets
@@ -37,6 +36,16 @@ async def load_stonfi_assets():
     except Exception as e:
         logging.error(f"Ошибка загрузки токенов STON.fi: {e}")
         stonfi_assets = {}
+
+async def load_dedust_jettons():
+    global dedust_jettons
+    try:
+        response = requests.get("https://api.dedust.io/v2/jettons", timeout=10)
+        jettons = response.json()
+        dedust_jettons = {j["address"]: j.get("metadata", {}).get("symbol", "???") for j in jettons}
+    except Exception as e:
+        logging.error(f"Ошибка загрузки токенов DeDust: {e}")
+        dedust_jettons = {}
 
 async def fetch_dedust():
     url = "https://api.dedust.io/v2/pools"
@@ -56,8 +65,10 @@ async def fetch_dedust():
 
         message = "🆕 Новые листинги DeDust:\n"
         for idx, pool in enumerate(latest, 1):
-            token0 = pool.get("token0", {}).get("metadata", {}).get("symbol", "???")
-            token1 = pool.get("token1", {}).get("metadata", {}).get("symbol", "???")
+            token0_address = pool.get("token0", {}).get("address", "")
+            token1_address = pool.get("token1", {}).get("address", "")
+            token0 = dedust_jettons.get(token0_address, token0_address[-6:])
+            token1 = dedust_jettons.get(token1_address, token1_address[-6:])
             date_str = pool["created_dt"].strftime("%d.%m.%Y")
             message += f"{idx}. {token0}/{token1} — {date_str}\n"
         return message
@@ -91,6 +102,7 @@ async def fetch_stonfi():
 async def update_listings(context: ContextTypes.DEFAULT_TYPE):
     global latest_listings
     await load_stonfi_assets()
+    await load_dedust_jettons()
     dedust = await fetch_dedust()
     stonfi = await fetch_stonfi()
     latest_listings = dedust + "\n" + stonfi + f"\n\nОбновлено: {datetime.utcnow().strftime('%d.%m.%Y %H:%M UTC')}"
