@@ -1,4 +1,4 @@
-# ФАЙЛ: bot.py (улучшенная версия с правильными названиями токенов DeDust и STON.fi)
+# ФАЙЛ: bot.py (финальная версия с нормальными названиями токенов)
 
 import requests
 import logging
@@ -32,7 +32,12 @@ async def load_stonfi_assets():
     try:
         response = requests.get("https://api.ston.fi/v1/assets", timeout=10)
         assets = response.json().get("assets", [])
-        stonfi_assets = {asset["address"]: asset.get("symbol", "???") for asset in assets}
+        stonfi_assets = {}
+        for asset in assets:
+            symbol = asset.get("symbol") or asset.get("name") or "UNKNOWN"
+            address = asset.get("address")
+            if address:
+                stonfi_assets[address] = symbol
     except Exception as e:
         logging.error(f"Ошибка загрузки токенов STON.fi: {e}")
         stonfi_assets = {}
@@ -42,7 +47,12 @@ async def load_dedust_jettons():
     try:
         response = requests.get("https://api.dedust.io/v2/jettons", timeout=10)
         jettons = response.json()
-        dedust_jettons = {j["address"]: j.get("metadata", {}).get("symbol", "???") for j in jettons}
+        dedust_jettons = {}
+        for j in jettons:
+            symbol = j.get("metadata", {}).get("symbol") or j.get("metadata", {}).get("name") or "UNKNOWN"
+            address = j.get("address")
+            if address:
+                dedust_jettons[address] = symbol
     except Exception as e:
         logging.error(f"Ошибка загрузки токенов DeDust: {e}")
         dedust_jettons = {}
@@ -67,8 +77,8 @@ async def fetch_dedust():
         for idx, pool in enumerate(latest, 1):
             token0_address = pool.get("token0", {}).get("address", "")
             token1_address = pool.get("token1", {}).get("address", "")
-            token0 = dedust_jettons.get(token0_address, token0_address[-6:])
-            token1 = dedust_jettons.get(token1_address, token1_address[-6:])
+            token0 = dedust_jettons.get(token0_address, "TON" if token0_address.startswith("0:") else token0_address[-6:])
+            token1 = dedust_jettons.get(token1_address, "TON" if token1_address.startswith("0:") else token1_address[-6:])
             date_str = pool["created_dt"].strftime("%d.%m.%Y")
             message += f"{idx}. {token0}/{token1} — {date_str}\n"
         return message
@@ -90,8 +100,8 @@ async def fetch_stonfi():
         for idx, pool in enumerate(latest, 1):
             token0_address = pool.get("token0_address", "")
             token1_address = pool.get("token1_address", "")
-            token0 = stonfi_assets.get(token0_address, token0_address[-6:])
-            token1 = stonfi_assets.get(token1_address, token1_address[-6:])
+            token0 = stonfi_assets.get(token0_address, "TON" if token0_address.startswith("0:") else token0_address[-6:])
+            token1 = stonfi_assets.get(token1_address, "TON" if token1_address.startswith("0:") else token1_address[-6:])
             message += f"{idx}. {token0}/{token1}\n"
         return message
 
