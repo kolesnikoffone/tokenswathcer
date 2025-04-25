@@ -1,4 +1,4 @@
-# ФАЙЛ: bot.py (чистая версия без мусора в токенах)
+# ФАЙЛ: bot.py (исправленная версия)
 
 import requests
 import logging
@@ -75,8 +75,7 @@ async def fetch_dedust():
         sorted_pools = sorted(pools, key=lambda x: x["created_dt"], reverse=True)
         latest = sorted_pools[:20]  # Берем больше пулов, чтобы отфильтровать пустые
 
-        message = "🆕 *Новые листинги DeDust:*
-"
+        message = "🆕 *Новые листинги DeDust:*\n"
         shown = 0
         for pool in latest:
             token0_address = pool.get("token0", {}).get("address", "")
