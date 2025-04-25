@@ -1,3 +1,5 @@
+# ФАЙЛ: bot.py (правильная версия для Render)
+
 import requests
 import logging
 import asyncio
@@ -7,17 +9,20 @@ from telegram import Update
 from telegram.ext import ApplicationBuilder, CommandHandler, ContextTypes
 from datetime import datetime
 
+# Загружаем переменные окружения
 load_dotenv()
 
 TOKEN = os.getenv("BOT_TOKEN")
 if not TOKEN:
     raise Exception("Нет BOT_TOKEN! Проверь переменные окружения.")
 
+# Настройка логов
 logging.basicConfig(
     format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
     level=logging.INFO
 )
 
+# Глобальная переменная для кэширования листингов
 latest_listings = "Данные еще загружаются..."
 
 async def fetch_dedust():
@@ -68,13 +73,11 @@ async def fetch_stonfi():
         logging.error(f"Ошибка получения STON.fi: {e}")
         return "Ошибка получения листингов STON.fi."
 
-async def update_listings():
+async def update_listings(context: ContextTypes.DEFAULT_TYPE):
     global latest_listings
-    while True:
-        dedust = await fetch_dedust()
-        stonfi = await fetch_stonfi()
-        latest_listings = dedust + "\n" + stonfi + f"\n\nОбновлено: {datetime.utcnow().strftime('%d.%m.%Y %H:%M UTC')}"
-        await asyncio.sleep(1800)  # Каждые 30 минут
+    dedust = await fetch_dedust()
+    stonfi = await fetch_stonfi()
+    latest_listings = dedust + "\n" + stonfi + f"\n\nОбновлено: {datetime.utcnow().strftime('%d.%m.%Y %H:%M UTC')}"
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text("Привет! Я отслеживаю новые токены на DeDust и STON.fi.\nКоманда: /newlistings")
@@ -82,12 +85,17 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
 async def newlistings(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text(latest_listings)
 
-async def main():
+def main():
     app = ApplicationBuilder().token(TOKEN).build()
+
     app.add_handler(CommandHandler("start", start))
     app.add_handler(CommandHandler("newlistings", newlistings))
-    asyncio.create_task(update_listings())
-    await app.run_polling()
+
+    # Периодическое обновление каждые 30 минут через job_queue
+    job_queue = app.job_queue
+    job_queue.run_repeating(update_listings, interval=1800, first=5)
+
+    app.run_polling()
 
 if __name__ == "__main__":
-    asyncio.run(main())
+    main()
