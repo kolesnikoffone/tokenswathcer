@@ -1,4 +1,4 @@
-# ФАЙЛ: bot.py (исправленная версия)
+# ФАЙЛ: bot.py (версия с подключением Ton.fun токенов)
 
 import requests
 import logging
@@ -26,6 +26,7 @@ logging.basicConfig(
 latest_listings = "Данные еще загружаются..."
 stonfi_assets = {}
 dedust_jettons = {}
+tonfun_tokens = {}
 
 async def load_stonfi_assets():
     global stonfi_assets
@@ -59,6 +60,22 @@ async def load_dedust_jettons():
         logging.error(f"Ошибка загрузки токенов DeDust: {e}")
         dedust_jettons = {}
 
+async def load_tonfun_tokens():
+    global tonfun_tokens
+    try:
+        response = requests.get("https://ton.fun/api/coins/list?page=1&limit=1000", timeout=10)
+        data = response.json()
+        coins = data.get("data", [])
+        tonfun_tokens = {}
+        for coin in coins:
+            symbol = coin.get("symbol") or coin.get("name") or "UNKNOWN"
+            address = coin.get("jetton_address")
+            if address:
+                tonfun_tokens[address] = symbol
+    except Exception as e:
+        logging.error(f"Ошибка загрузки токенов Ton.fun: {e}")
+        tonfun_tokens = {}
+
 async def fetch_dedust():
     url = "https://api.dedust.io/v2/pools"
     try:
@@ -73,7 +90,7 @@ async def fetch_dedust():
                 pool["created_dt"] = datetime.utcnow()
 
         sorted_pools = sorted(pools, key=lambda x: x["created_dt"], reverse=True)
-        latest = sorted_pools[:20]  # Берем больше пулов, чтобы отфильтровать пустые
+        latest = sorted_pools[:20]
 
         message = "🆕 *Новые листинги DeDust:*\n"
         shown = 0
@@ -82,10 +99,8 @@ async def fetch_dedust():
             token1_address = pool.get("token1", {}).get("address", "")
             if not token0_address or not token1_address:
                 continue
-            token0 = dedust_jettons.get(token0_address, "TON" if token0_address.startswith("0:") else "UNKNOWN")
-            token1 = dedust_jettons.get(token1_address, "TON" if token1_address.startswith("0:") else "UNKNOWN")
-            if token0 == "UNKNOWN" or token1 == "UNKNOWN":
-                continue
+            token0 = dedust_jettons.get(token0_address) or tonfun_tokens.get(token0_address) or ("TON" if token0_address.startswith("0:") else token0_address[-6:])
+            token1 = dedust_jettons.get(token1_address) or tonfun_tokens.get(token1_address) or ("TON" if token1_address.startswith("0:") else token1_address[-6:])
             pool_address = pool.get("address", "")
             reserve0 = pool.get("reserve0", 0) / 10**9
             link = f"https://dedust.io/pool/{pool_address}"
@@ -117,10 +132,8 @@ async def fetch_stonfi():
             token1_address = pool.get("token1_address", "")
             if not token0_address or not token1_address:
                 continue
-            token0 = stonfi_assets.get(token0_address, "TON" if token0_address.startswith("0:") else "UNKNOWN")
-            token1 = stonfi_assets.get(token1_address, "TON" if token1_address.startswith("0:") else "UNKNOWN")
-            if token0 == "UNKNOWN" or token1 == "UNKNOWN":
-                continue
+            token0 = stonfi_assets.get(token0_address) or tonfun_tokens.get(token0_address) or ("TON" if token0_address.startswith("0:") else token0_address[-6:])
+            token1 = stonfi_assets.get(token1_address) or tonfun_tokens.get(token1_address) or ("TON" if token1_address.startswith("0:") else token1_address[-6:])
             link = f"https://app.ston.fi/swap?chartVisible=false&asset0={token0_address}&asset1={token1_address}"
             shown += 1
             message += f"{shown}. {token0}/{token1} [Торговать]({link})\n"
@@ -138,6 +151,7 @@ async def update_listings(context: ContextTypes.DEFAULT_TYPE):
     global latest_listings
     await load_stonfi_assets()
     await load_dedust_jettons()
+    await load_tonfun_tokens()
     dedust = await fetch_dedust()
     stonfi = await fetch_stonfi()
     latest_listings = dedust + "\n" + stonfi + f"\n\n_Обновлено: {datetime.utcnow().strftime('%d.%m.%Y %H:%M UTC')}_"
