@@ -1,86 +1,113 @@
-# ФАЙЛ: bot.py (ТОЛЬКО Ton.fun токены)
+# ФАЙЛ: bot.py (Только новые токены Ton.fun с ликвидностью на STON.fi)
 
-import requests
-import logging
-import asyncio
 import os
+import logging
+import aiohttp
+import asyncio
 from dotenv import load_dotenv
 from telegram import Update
 from telegram.ext import ApplicationBuilder, CommandHandler, ContextTypes
 from datetime import datetime
 
-# Загружаем переменные окружения
+# Загрузка переменных окружения
 load_dotenv()
 
 TOKEN = os.getenv("BOT_TOKEN")
 if not TOKEN:
     raise Exception("Нет BOT_TOKEN! Проверь переменные окружения.")
 
-# Настройка логов
-logging.basicConfig(
-    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
-    level=logging.INFO
-)
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
 
-# Глобальный кэш Ton.fun токенов
+# Глобальный кэш
+announced_tokens = set()
 latest_listings = "Данные ещё загружаются..."
-tonfun_tokens = {}
 
-async def load_tonfun_tokens():
-    global tonfun_tokens
+async def fetch_tonfun_tokens():
+    url = "https://ton.fun/api/coins/list"
+    headers = {"User-Agent": "Mozilla/5.0 (compatible; TelegramBot/1.0)"}
+    async with aiohttp.ClientSession() as session:
+        async with session.get(url, headers=headers) as resp:
+            if resp.status != 200:
+                raise Exception(f"Ошибка Ton.fun API: {resp.status}")
+            data = await resp.json()
+            return data.get("data", [])
+
+async def fetch_stonfi_pools():
+    url = "https://api.ston.fi/v1/stats/pool"
+    async with aiohttp.ClientSession() as session:
+        async with session.get(url) as resp:
+            if resp.status != 200:
+                raise Exception(f"Ошибка STON.fi API: {resp.status}")
+            data = await resp.json()
+            return data.get("stats", [])
+
+async def update_listings(context: ContextTypes.DEFAULT_TYPE = None):
+    global latest_listings, announced_tokens
     try:
-        headers = {"User-Agent": "Mozilla/5.0 (compatible; TelegramBot/1.0)"}
-        response = requests.get("https://ton.fun/api/coins/list?page=1&limit=1000", timeout=10, headers=headers)
-        if response.status_code != 200 or not response.content:
-            raise Exception(f"Пустой ответ или HTTP {response.status_code}")
-        data = response.json()
-        coins = data.get("data", [])
-        tonfun_tokens = {}
-        for coin in coins:
-            symbol = coin.get("symbol") or coin.get("name") or "UNKNOWN"
-            address = coin.get("jetton_address")
-            if address:
-                tonfun_tokens[address] = symbol
+        tonfun_tokens = await fetch_tonfun_tokens()
+        stonfi_pools = await fetch_stonfi_pools()
+
+        # Сопоставляем токены с пулами
+        liquid_tokens = {}
+        for pool in stonfi_pools:
+            base = pool.get("base_address")
+            quote = pool.get("quote_address")
+            last_price = pool.get("last_price")
+            base_symbol = pool.get("base_symbol")
+            quote_symbol = pool.get("quote_symbol")
+            if not last_price:
+                continue
+
+            if base:
+                liquid_tokens[base] = (base_symbol, last_price, quote_symbol)
+            if quote:
+                try:
+                    inverse_price = 1.0 / float(last_price)
+                    liquid_tokens[quote] = (quote_symbol, f"{inverse_price:.9f}", base_symbol)
+                except ZeroDivisionError:
+                    continue
+
+        message = "🆕 *Новые токены Ton.fun с ликвидностью:*\n"
+        found = 0
+
+        for token in tonfun_tokens:
+            address = token.get("jetton_address")
+            symbol = token.get("symbol") or token.get("name") or "UNKNOWN"
+            if not address or address in announced_tokens:
+                continue
+            if address in liquid_tokens:
+                symbol_disp, price, unit = liquid_tokens[address]
+                tonviewer_link = f"https://tonviewer.com/{address}"
+                message += f"{found+1}. **{symbol}** — {price} {unit} — [Tonviewer]({tonviewer_link})\n"
+                announced_tokens.add(address)
+                found += 1
+                if found >= 10:
+                    break
+
+        if found == 0:
+            message += "\nНет новых токенов с ликвидностью."
+
+        latest_listings = message + f"\n\n_Обновлено: {datetime.utcnow().strftime('%d.%m.%Y %H:%M UTC')}_"
+
+        # Если обновление через JobQueue — отправляем сразу в чат
+        if context:
+            await context.bot.send_message(chat_id=context.job.data, text=latest_listings, parse_mode='Markdown')
+
     except Exception as e:
-        logging.error(f"Ошибка загрузки токенов Ton.fun: {e}")
-        tonfun_tokens = {}
-
-async def fetch_tonfun():
-    message = "🆕 *Новые токены Ton.fun:*\n"
-    try:
-        if not tonfun_tokens:
-            await load_tonfun_tokens()
-
-        if not tonfun_tokens:
-            message += "\nНет новых токенов."
-        else:
-            shown = 0
-            for address, symbol in list(tonfun_tokens.items())[:10]:
-                link = f"https://ton.fun/token/{address}"
-                shown += 1
-                message += f"{shown}. {symbol} [Смотреть]({link})\n"
-
-    except Exception as e:
-        logging.error(f"Ошибка получения токенов Ton.fun: {e}")
-        message += "\nОшибка получения токенов."
-
-    return message
-
-async def update_listings(context: ContextTypes.DEFAULT_TYPE):
-    global latest_listings
-    await load_tonfun_tokens()
-    tonfun = await fetch_tonfun()
-    latest_listings = tonfun + f"\n\n_Обновлено: {datetime.utcnow().strftime('%d.%m.%Y %H:%M UTC')}_"
+        logger.error(f"Ошибка обновления листингов: {e}")
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    await update.message.reply_text("Привет! Я отслеживаю новые токены с Ton.fun\nКоманда: /newlistings")
+    chat_id = update.effective_chat.id
+    await update.message.reply_text("Привет! Я отслеживаю новые токены Ton.fun с ликвидностью на STON.fi!\nКоманда: /newlistings")
+    # Запускаем проверку каждые 30 минут
+    context.job_queue.run_repeating(update_listings, interval=1800, first=5, data=chat_id)
 
 async def newlistings(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text(latest_listings, parse_mode='Markdown')
 
 def main():
     app = ApplicationBuilder().token(TOKEN).build()
-
     app.add_handler(CommandHandler("start", start))
     app.add_handler(CommandHandler("newlistings", newlistings))
 
