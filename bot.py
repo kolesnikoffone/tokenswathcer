@@ -1,4 +1,4 @@
-# ФАЙЛ: bot.py (с исправлением загрузки Ton.fun токенов)
+# ФАЙЛ: bot.py (ТОЛЬКО Ton.fun токены)
 
 import requests
 import logging
@@ -22,43 +22,9 @@ logging.basicConfig(
     level=logging.INFO
 )
 
-# Глобальные кэши для токенов
-latest_listings = "Данные еще загружаются..."
-stonfi_assets = {}
-dedust_jettons = {}
+# Глобальный кэш Ton.fun токенов
+latest_listings = "Данные ещё загружаются..."
 tonfun_tokens = {}
-
-async def load_stonfi_assets():
-    global stonfi_assets
-    try:
-        response = requests.get("https://api.ston.fi/v1/assets", timeout=10)
-        assets = response.json().get("assets", [])
-        stonfi_assets = {}
-        for asset in assets:
-            symbol = asset.get("symbol") or asset.get("name") or "UNKNOWN"
-            address = asset.get("address")
-            if address:
-                stonfi_assets[address] = symbol
-    except Exception as e:
-        logging.error(f"Ошибка загрузки токенов STON.fi: {e}")
-        stonfi_assets = {}
-
-async def load_dedust_jettons():
-    global dedust_jettons
-    try:
-        response = requests.get("https://api.dedust.io/v2/jettons", timeout=10)
-        jettons = response.json()
-        dedust_jettons = {}
-        if isinstance(jettons, list):
-            for j in jettons:
-                if isinstance(j, dict):
-                    symbol = j.get("metadata", {}).get("symbol") or j.get("metadata", {}).get("name") or "UNKNOWN"
-                    address = j.get("address")
-                    if address:
-                        dedust_jettons[address] = symbol
-    except Exception as e:
-        logging.error(f"Ошибка загрузки токенов DeDust: {e}")
-        dedust_jettons = {}
 
 async def load_tonfun_tokens():
     global tonfun_tokens
@@ -79,88 +45,36 @@ async def load_tonfun_tokens():
         logging.error(f"Ошибка загрузки токенов Ton.fun: {e}")
         tonfun_tokens = {}
 
-async def fetch_dedust():
-    url = "https://api.dedust.io/v2/pools"
+async def fetch_tonfun():
+    message = "🆕 *Новые токены Ton.fun:*
+"
     try:
-        response = requests.get(url, timeout=10)
-        pools = response.json()
+        if not tonfun_tokens:
+            await load_tonfun_tokens()
 
-        for pool in pools:
-            created_ts = pool.get("created_at")
-            if created_ts:
-                pool["created_dt"] = datetime.utcfromtimestamp(created_ts)
-            else:
-                pool["created_dt"] = datetime.utcnow()
-
-        sorted_pools = sorted(pools, key=lambda x: x["created_dt"], reverse=True)
-        latest = sorted_pools[:20]
-
-        message = "🆕 *Новые листинги DeDust:*\n"
-        shown = 0
-        for pool in latest:
-            token0_address = pool.get("token0", {}).get("address", "")
-            token1_address = pool.get("token1", {}).get("address", "")
-            if not token0_address or not token1_address:
-                continue
-            token0 = dedust_jettons.get(token0_address) or tonfun_tokens.get(token0_address) or ("TON" if token0_address.startswith("0:") else token0_address[-6:])
-            token1 = dedust_jettons.get(token1_address) or tonfun_tokens.get(token1_address) or ("TON" if token1_address.startswith("0:") else token1_address[-6:])
-            pool_address = pool.get("address", "")
-            reserve0 = pool.get("reserve0", 0) / 10**9
-            link = f"https://dedust.io/pool/{pool_address}"
-            shown += 1
-            message += f"{shown}. {token0}/{token1} — ~{reserve0:.3f} {token1} [Торговать]({link})\n"
-            if shown >= 10:
-                break
-        if shown == 0:
-            message += "Нет новых пулов."
-        return message
+        if not tonfun_tokens:
+            message += "\nНет новых токенов."
+        else:
+            shown = 0
+            for address, symbol in list(tonfun_tokens.items())[:10]:
+                link = f"https://ton.fun/token/{address}"
+                shown += 1
+                message += f"{shown}. {symbol} [Смотреть]({link})\n"
 
     except Exception as e:
-        logging.error(f"Ошибка получения DeDust: {e}")
-        return "Ошибка получения листингов DeDust."
+        logging.error(f"Ошибка получения токенов Ton.fun: {e}")
+        message += "\nОшибка получения токенов."
 
-async def fetch_stonfi():
-    url = "https://api.ston.fi/v1/pools"
-    try:
-        response = requests.get(url, timeout=10)
-        data = response.json()
-        pools = data.get("pool_list", [])
-
-        latest = pools[-20:][::-1]
-
-        message = "\n🆕 *Новые листинги STON.fi:*\n"
-        shown = 0
-        for pool in latest:
-            token0_address = pool.get("token0_address", "")
-            token1_address = pool.get("token1_address", "")
-            if not token0_address or not token1_address:
-                continue
-            token0 = stonfi_assets.get(token0_address) or tonfun_tokens.get(token0_address) or ("TON" if token0_address.startswith("0:") else token0_address[-6:])
-            token1 = stonfi_assets.get(token1_address) or tonfun_tokens.get(token1_address) or ("TON" if token1_address.startswith("0:") else token1_address[-6:])
-            link = f"https://app.ston.fi/swap?chartVisible=false&asset0={token0_address}&asset1={token1_address}"
-            shown += 1
-            message += f"{shown}. {token0}/{token1} [Торговать]({link})\n"
-            if shown >= 10:
-                break
-        if shown == 0:
-            message += "Нет новых пулов."
-        return message
-
-    except Exception as e:
-        logging.error(f"Ошибка получения STON.fi: {e}")
-        return "Ошибка получения листингов STON.fi."
+    return message
 
 async def update_listings(context: ContextTypes.DEFAULT_TYPE):
     global latest_listings
-    await load_stonfi_assets()
-    await load_dedust_jettons()
     await load_tonfun_tokens()
-    dedust = await fetch_dedust()
-    stonfi = await fetch_stonfi()
-    latest_listings = dedust + "\n" + stonfi + f"\n\n_Обновлено: {datetime.utcnow().strftime('%d.%m.%Y %H:%M UTC')}_"
+    tonfun = await fetch_tonfun()
+    latest_listings = tonfun + f"\n\n_Обновлено: {datetime.utcnow().strftime('%d.%m.%Y %H:%M UTC')}_"
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    await update.message.reply_text("Привет! Я отслеживаю новые токены на DeDust и STON.fi.\nКоманда: /newlistings")
+    await update.message.reply_text("Привет! Я отслеживаю новые токены с Ton.fun\nКоманда: /newlistings")
 
 async def newlistings(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text(latest_listings, parse_mode='Markdown')
