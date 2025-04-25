@@ -1,4 +1,4 @@
-# ФАЙЛ: bot.py (с ценами токенов и ссылками на торговлю)
+# ФАЙЛ: bot.py (чистая версия без мусора в токенах)
 
 import requests
 import logging
@@ -73,18 +73,29 @@ async def fetch_dedust():
                 pool["created_dt"] = datetime.utcnow()
 
         sorted_pools = sorted(pools, key=lambda x: x["created_dt"], reverse=True)
-        latest = sorted_pools[:10]
+        latest = sorted_pools[:20]  # Берем больше пулов, чтобы отфильтровать пустые
 
-        message = "🆕 *Новые листинги DeDust:*\n"
-        for idx, pool in enumerate(latest, 1):
+        message = "🆕 *Новые листинги DeDust:*
+"
+        shown = 0
+        for pool in latest:
             token0_address = pool.get("token0", {}).get("address", "")
             token1_address = pool.get("token1", {}).get("address", "")
-            token0 = dedust_jettons.get(token0_address, "TON" if token0_address.startswith("0:") else token0_address[-6:])
-            token1 = dedust_jettons.get(token1_address, "TON" if token1_address.startswith("0:") else token1_address[-6:])
+            if not token0_address or not token1_address:
+                continue
+            token0 = dedust_jettons.get(token0_address, "TON" if token0_address.startswith("0:") else "UNKNOWN")
+            token1 = dedust_jettons.get(token1_address, "TON" if token1_address.startswith("0:") else "UNKNOWN")
+            if token0 == "UNKNOWN" or token1 == "UNKNOWN":
+                continue
             pool_address = pool.get("address", "")
-            reserve0 = pool.get("reserve0", 0) / 10**9  # Обычно в нанотонах
+            reserve0 = pool.get("reserve0", 0) / 10**9
             link = f"https://dedust.io/pool/{pool_address}"
-            message += f"{idx}. {token0}/{token1} — ~{reserve0:.3f} {token1} [Торговать]({link})\n"
+            shown += 1
+            message += f"{shown}. {token0}/{token1} — ~{reserve0:.3f} {token1} [Торговать]({link})\n"
+            if shown >= 10:
+                break
+        if shown == 0:
+            message += "Нет новых пулов."
         return message
 
     except Exception as e:
@@ -98,16 +109,26 @@ async def fetch_stonfi():
         data = response.json()
         pools = data.get("pool_list", [])
 
-        latest = pools[-10:][::-1]
+        latest = pools[-20:][::-1]
 
         message = "\n🆕 *Новые листинги STON.fi:*\n"
-        for idx, pool in enumerate(latest, 1):
+        shown = 0
+        for pool in latest:
             token0_address = pool.get("token0_address", "")
             token1_address = pool.get("token1_address", "")
-            token0 = stonfi_assets.get(token0_address, "TON" if token0_address.startswith("0:") else token0_address[-6:])
-            token1 = stonfi_assets.get(token1_address, "TON" if token1_address.startswith("0:") else token1_address[-6:])
+            if not token0_address or not token1_address:
+                continue
+            token0 = stonfi_assets.get(token0_address, "TON" if token0_address.startswith("0:") else "UNKNOWN")
+            token1 = stonfi_assets.get(token1_address, "TON" if token1_address.startswith("0:") else "UNKNOWN")
+            if token0 == "UNKNOWN" or token1 == "UNKNOWN":
+                continue
             link = f"https://app.ston.fi/swap?chartVisible=false&asset0={token0_address}&asset1={token1_address}"
-            message += f"{idx}. {token0}/{token1} [Торговать]({link})\n"
+            shown += 1
+            message += f"{shown}. {token0}/{token1} [Торговать]({link})\n"
+            if shown >= 10:
+                break
+        if shown == 0:
+            message += "Нет новых пулов."
         return message
 
     except Exception as e:
