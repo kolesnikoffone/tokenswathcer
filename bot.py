@@ -1,4 +1,4 @@
-# ФАЙЛ: bot.py (финальная версия с нормальными названиями токенов)
+# ФАЙЛ: bot.py (с ценами токенов и ссылками на торговлю)
 
 import requests
 import logging
@@ -48,11 +48,13 @@ async def load_dedust_jettons():
         response = requests.get("https://api.dedust.io/v2/jettons", timeout=10)
         jettons = response.json()
         dedust_jettons = {}
-        for j in jettons:
-            symbol = j.get("metadata", {}).get("symbol") or j.get("metadata", {}).get("name") or "UNKNOWN"
-            address = j.get("address")
-            if address:
-                dedust_jettons[address] = symbol
+        if isinstance(jettons, list):
+            for j in jettons:
+                if isinstance(j, dict):
+                    symbol = j.get("metadata", {}).get("symbol") or j.get("metadata", {}).get("name") or "UNKNOWN"
+                    address = j.get("address")
+                    if address:
+                        dedust_jettons[address] = symbol
     except Exception as e:
         logging.error(f"Ошибка загрузки токенов DeDust: {e}")
         dedust_jettons = {}
@@ -73,14 +75,16 @@ async def fetch_dedust():
         sorted_pools = sorted(pools, key=lambda x: x["created_dt"], reverse=True)
         latest = sorted_pools[:10]
 
-        message = "🆕 Новые листинги DeDust:\n"
+        message = "🆕 *Новые листинги DeDust:*\n"
         for idx, pool in enumerate(latest, 1):
             token0_address = pool.get("token0", {}).get("address", "")
             token1_address = pool.get("token1", {}).get("address", "")
             token0 = dedust_jettons.get(token0_address, "TON" if token0_address.startswith("0:") else token0_address[-6:])
             token1 = dedust_jettons.get(token1_address, "TON" if token1_address.startswith("0:") else token1_address[-6:])
-            date_str = pool["created_dt"].strftime("%d.%m.%Y")
-            message += f"{idx}. {token0}/{token1} — {date_str}\n"
+            pool_address = pool.get("address", "")
+            reserve0 = pool.get("reserve0", 0) / 10**9  # Обычно в нанотонах
+            link = f"https://dedust.io/pool/{pool_address}"
+            message += f"{idx}. {token0}/{token1} — ~{reserve0:.3f} {token1} [Торговать]({link})\n"
         return message
 
     except Exception as e:
@@ -96,13 +100,14 @@ async def fetch_stonfi():
 
         latest = pools[-10:][::-1]
 
-        message = "\n🆕 Новые листинги STON.fi:\n"
+        message = "\n🆕 *Новые листинги STON.fi:*\n"
         for idx, pool in enumerate(latest, 1):
             token0_address = pool.get("token0_address", "")
             token1_address = pool.get("token1_address", "")
             token0 = stonfi_assets.get(token0_address, "TON" if token0_address.startswith("0:") else token0_address[-6:])
             token1 = stonfi_assets.get(token1_address, "TON" if token1_address.startswith("0:") else token1_address[-6:])
-            message += f"{idx}. {token0}/{token1}\n"
+            link = f"https://app.ston.fi/swap?chartVisible=false&asset0={token0_address}&asset1={token1_address}"
+            message += f"{idx}. {token0}/{token1} [Торговать]({link})\n"
         return message
 
     except Exception as e:
@@ -115,13 +120,13 @@ async def update_listings(context: ContextTypes.DEFAULT_TYPE):
     await load_dedust_jettons()
     dedust = await fetch_dedust()
     stonfi = await fetch_stonfi()
-    latest_listings = dedust + "\n" + stonfi + f"\n\nОбновлено: {datetime.utcnow().strftime('%d.%m.%Y %H:%M UTC')}"
+    latest_listings = dedust + "\n" + stonfi + f"\n\n_Обновлено: {datetime.utcnow().strftime('%d.%m.%Y %H:%M UTC')}_"
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text("Привет! Я отслеживаю новые токены на DeDust и STON.fi.\nКоманда: /newlistings")
 
 async def newlistings(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    await update.message.reply_text(latest_listings)
+    await update.message.reply_text(latest_listings, parse_mode='Markdown')
 
 def main():
     app = ApplicationBuilder().token(TOKEN).build()
