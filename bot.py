@@ -46,8 +46,7 @@ async def load_tonfun_tokens():
         tonfun_tokens = {}
 
 async def fetch_tonfun():
-    message = "🆕 *Новые токены Ton.fun:*
-"
+    message = "🆕 *Новые токены Ton.fun:*\n"
     try:
         if not tonfun_tokens:
             await load_tonfun_tokens()
