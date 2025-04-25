@@ -31,8 +31,8 @@ async def load_tonfun_tokens():
     try:
         headers = {"User-Agent": "Mozilla/5.0 (compatible; TelegramBot/1.0)"}
         response = requests.get("https://ton.fun/api/coins/list?page=1&limit=1000", timeout=10, headers=headers)
-        if response.status_code != 200:
-            raise Exception(f"HTTP {response.status_code}")
+        if response.status_code != 200 or not response.content:
+            raise Exception(f"Пустой ответ или HTTP {response.status_code}")
         data = response.json()
         coins = data.get("data", [])
         tonfun_tokens = {}
