@@ -1,4 +1,4 @@
-# ФАЙЛ: bot.py (правильная версия для Render)
+# ФАЙЛ: bot.py (с красивыми названиями токенов)
 
 import requests
 import logging
@@ -25,6 +25,19 @@ logging.basicConfig(
 # Глобальная переменная для кэширования листингов
 latest_listings = "Данные еще загружаются..."
 
+# Кэш для токенов STON.fi
+stonfi_assets = {}
+
+async def load_stonfi_assets():
+    global stonfi_assets
+    try:
+        response = requests.get("https://api.ston.fi/v1/assets", timeout=10)
+        assets = response.json().get("assets", [])
+        stonfi_assets = {asset["address"]: asset.get("symbol", "???") for asset in assets}
+    except Exception as e:
+        logging.error(f"Ошибка загрузки токенов STON.fi: {e}")
+        stonfi_assets = {}
+
 async def fetch_dedust():
     url = "https://api.dedust.io/v2/pools"
     try:
@@ -43,8 +56,8 @@ async def fetch_dedust():
 
         message = "🆕 Новые листинги DeDust:\n"
         for idx, pool in enumerate(latest, 1):
-            token0 = pool.get("token0", {}).get("symbol", "???")
-            token1 = pool.get("token1", {}).get("symbol", "???")
+            token0 = pool.get("token0", {}).get("metadata", {}).get("symbol", "???")
+            token1 = pool.get("token1", {}).get("metadata", {}).get("symbol", "???")
             date_str = pool["created_dt"].strftime("%d.%m.%Y")
             message += f"{idx}. {token0}/{token1} — {date_str}\n"
         return message
@@ -64,8 +77,10 @@ async def fetch_stonfi():
 
         message = "\n🆕 Новые листинги STON.fi:\n"
         for idx, pool in enumerate(latest, 1):
-            token0 = pool.get("token0_address", "???")[-6:]
-            token1 = pool.get("token1_address", "???")[-6:]
+            token0_address = pool.get("token0_address", "")
+            token1_address = pool.get("token1_address", "")
+            token0 = stonfi_assets.get(token0_address, token0_address[-6:])
+            token1 = stonfi_assets.get(token1_address, token1_address[-6:])
             message += f"{idx}. {token0}/{token1}\n"
         return message
 
@@ -75,6 +90,7 @@ async def fetch_stonfi():
 
 async def update_listings(context: ContextTypes.DEFAULT_TYPE):
     global latest_listings
+    await load_stonfi_assets()
     dedust = await fetch_dedust()
     stonfi = await fetch_stonfi()
     latest_listings = dedust + "\n" + stonfi + f"\n\nОбновлено: {datetime.utcnow().strftime('%d.%m.%Y %H:%M UTC')}"
@@ -91,7 +107,6 @@ def main():
     app.add_handler(CommandHandler("start", start))
     app.add_handler(CommandHandler("newlistings", newlistings))
 
-    # Периодическое обновление каждые 30 минут через job_queue
     job_queue = app.job_queue
     job_queue.run_repeating(update_listings, interval=1800, first=5)
 
