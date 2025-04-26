@@ -1,9 +1,10 @@
-# ФАЙЛ: bot.py (BigPump + STON.fi токены)
+# ФАЙЛ: bot.py (BigPump + STON.fi токены через парсинг)
 
 import os
 import logging
 import aiohttp
 import asyncio
+from bs4 import BeautifulSoup
 from dotenv import load_dotenv
 from telegram import Update
 from telegram.ext import ApplicationBuilder, CommandHandler, ContextTypes
@@ -24,14 +25,28 @@ announced_tokens = set()
 latest_listings = "Данные ещё загружаются..."
 
 async def fetch_bigpump_tokens():
-    url = "https://bigpump.app/api/v1/coins"
+    url = "https://bigpump.app"
     headers = {"User-Agent": "Mozilla/5.0 (compatible; TelegramBot/1.0)"}
     async with aiohttp.ClientSession() as session:
         async with session.get(url, headers=headers) as resp:
             if resp.status != 200:
-                raise Exception(f"Ошибка BigPump API: {resp.status}")
-            data = await resp.json()
-            return data.get("coins", [])
+                raise Exception(f"Ошибка BigPump: {resp.status}")
+            html = await resp.text()
+            soup = BeautifulSoup(html, "html.parser")
+
+            tokens = []
+            for div in soup.find_all("div", class_="coin-item"):
+                symbol_tag = div.find("div", class_="coin-symbol")
+                price_tag = div.find("div", class_="coin-price")
+                link_tag = div.find("a", href=True)
+                if symbol_tag and price_tag and link_tag:
+                    address = link_tag['href'].split('/')[-1]
+                    tokens.append({
+                        "symbol": symbol_tag.text.strip(),
+                        "price": price_tag.text.strip(),
+                        "address": address
+                    })
+            return tokens
 
 async def fetch_stonfi_pools():
     url = "https://api.ston.fi/v1/stats/pool"
