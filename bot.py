@@ -57,8 +57,7 @@ async def update_listings(context: ContextTypes.DEFAULT_TYPE = None):
             if quote:
                 stonfi_addresses.add(quote)
 
-        message = "🆕 *Новые токены BigPump с ликвидностью:*
-"
+        message = "🆕 *Новые токены BigPump с ликвидностью:*\n"
         found = 0
 
         for token in bigpump_tokens:
@@ -91,12 +90,7 @@ async def newtokens(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     chat_id = update.effective_chat.id
-    await update.message.reply_text("👋 *Добро пожаловать!*
-
-Я отслеживаю новые токены BigPump с ликвидностью на STON.fi!
-
-*Команды:*
-/newtokens — Новые токены с ликвидностью", parse_mode='Markdown')
+    await update.message.reply_text("👋 *Добро пожаловать!*\n\nЯ отслеживаю новые токены BigPump с ликвидностью на STON.fi!\n\n*Команды:*\n/newtokens — Новые токены с ликвидностью", parse_mode='Markdown')
     context.job_queue.run_repeating(update_listings, interval=1800, first=5, data=chat_id)
 
 def main():
