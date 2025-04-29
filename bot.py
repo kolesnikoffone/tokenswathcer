@@ -39,7 +39,7 @@ async def get_tokens():
                     for token in tokens:
                         name = token.get('name')
                         symbol = token.get('symbol')
-                        cap = token.get('marketCap')
+                        cap = token.get('liqUsdMarketCap') or token.get('marketCap')
                         change = token.get('priceChange1H')
 
                         if cap:
