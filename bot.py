@@ -33,14 +33,18 @@ async def get_tokens():
                 logger.debug(f"Raw response: {text}")
                 if response.status == 200:
                     data = await response.json()
-                    tokens = data.get('data', [])
+                    tokens = data.get('coins', [])
                     result = []
                     for token in tokens:
+                        logger.info(f"Parsed token: {token}")
                         name = token.get('name')
                         symbol = token.get('symbol')
                         address = token.get('address')
-                        chain = token.get('chain')
-                        result.append(f"{name} ({symbol})\nChain: {chain}\nAddress: {address}\n")
+                        chain = 'TON'  # по умолчанию, так как поле отсутствует
+                        if not all([name, symbol, address]):
+                            result.append(f"⚠️ Неполные данные: {token}")
+                        else:
+                            result.append(f"{name} ({symbol})\nChain: {chain}\nAddress: {address}\n")
                     if not result:
                         result.append("Нет токенов в ответе от BigPump.")
                     return result
