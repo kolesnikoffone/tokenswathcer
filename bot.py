@@ -19,7 +19,6 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
-# Функция запроса цены TON с CoinGecko
 REFERRAL_PREFIX = "prghZZEt-"
 
 def address_to_base64url(address: str) -> str:
@@ -42,6 +41,7 @@ def address_to_base64url(address: str) -> str:
     full_data = data + checksum
     return base64.urlsafe_b64encode(full_data).rstrip(b'=').decode()
 
+
 async def get_ton_price():
     url = 'https://api.coingecko.com/api/v3/simple/price?ids=the-open-network&vs_currencies=usd'
     try:
@@ -54,21 +54,29 @@ async def get_ton_price():
         logger.warning(f"Не удалось получить цену TON: {e}")
     return 0
 
-# Функция запроса данных с BigPump
+
 async def get_tokens():
     url = 'https://prod-api.bigpump.app/api/v1/coins?sortType=pocketfi&limit=30'
     headers = {
-        'authorization': 'Bearer eyJhbGciOiJIUzI1NiJ9.eyJhZGRyZXNzIjoiMDpmNWI5MWRkZDBiOWM4N2VmNjUwMTFhNzlmMWRhNzE5NzIwYzVhODgwN2I1NGMxYTQwNTIyNzRmYTllMzc5YmNkIiwibmV0d29yayI6Ii0yMzkiLCJpYXQiOjE3NDI4MDY4NTMsImV4cCI6MTc3NDM2NDQ1M30.U_GaaX5psI572w4yMwAjlh8u4uFBVHdsD-zJacvWiPo',
         'accept': '*/*',
+        'accept-language': 'en-US,en;q=0.9,ru-RU;q=0.8,ru;q=0.7,tr-TR;q=0.6,tr;q=0.5',
+        'authorization': 'Bearer eyJhbGciOiJIUzI1NiJ9.eyJhZGRyZXNzIjoiMDpmNWI5MWRkZDBiOWM4N2VmNjUwMTFhNzlmMWRhNzE5NzIwYzVhODgwN2I1NGMxYTQwNTIyNzRmYTllMzc5YmNkIiwibmV0d29yayI6Ii0yMzkiLCJpYXQiOjE3NDI4MDY4NTMsImV4cCI6MTc3NDM2NDQ1M30.U_GaaX5psI572w4YmwAjlh8u4uFBVHdsD-zJacvWiPo',
         'origin': 'https://bigpump.app',
+        'priority': 'u=1, i',
         'referer': 'https://bigpump.app/',
+        'sec-ch-ua': '"Google Chrome";v="135", "Not-A.Brand";v="8", "Chromium";v="135"',
+        'sec-ch-ua-mobile': '?0',
+        'sec-ch-ua-platform': '"macOS"',
+        'sec-fetch-dest': 'empty',
+        'sec-fetch-mode': 'cors',
+        'sec-fetch-site': 'same-site',
+        'telegramrawdata': 'query_id=AAEaYrUMAAAAABpitQwu6gcp&user=%7B%22id%22%3A213213722%2C%22first_name%22%3A%22Igor%22%2C%22last_name%22%3A%22Koles%22%2C%22username%22%3A%22kolesnikoffone%22%2C%22language_code%22%3A%22en%22%2C%22is_premium%22%3Atrue%2C%22allows_write_to_pm%22%3Atrue%2C%22photo_url%22%3A%22https%3A%5C%2F%5C%2Ft.me%5C%2Fi%5C%2Fuserpic%5C%2F320%5C%2FLOS2-JjhnhmjzAqoRwJhBdgkfv48pIMkDeo8El8OkCc.svg%22%7D&auth_date=1739471509&signature=_BACnt92QPix6-bfrlGuo5HiA4XBiSI6BP-v3jQRUVJqp2N8ydUMmWGixj4e9s9x0o0xONFOa51eo2W1JfbYBQ&hash=0c3fd36bf663249d93da37b949087c716d9e883171da0fa107f026bf439bd9d3',
+        'user-agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/135.0.0.0 Safari/537.36'
     }
     try:
         async with aiohttp.ClientSession() as session:
             async with session.get(url, headers=headers) as response:
                 logger.info(f"BigPump API responded with status {response.status}")
-                text = await response.text()
-                logger.debug(f"Raw response: {text}")
                 if response.status == 200:
                     data = await response.json()
                     tokens = data.get('coins', [])
@@ -129,23 +137,21 @@ async def get_tokens():
 
                     return ["\n\n".join(result)] if result else ["Нет подходящих токенов"]
                 else:
-                    return [f"Ошибка {response.status}: {text}"]
+                    return [f"Ошибка {response.status}"]
     except Exception as e:
         logger.exception("Ошибка при обращении к BigPump API")
         return [f"Ошибка при запросе: {str(e)}"]
 
-# Обработчик команды /tokens
+
 async def tokens_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text("Получаю токены с BigPump...")
     tokens = await get_tokens()
     for t in tokens:
         await update.message.reply_text(t, parse_mode=ParseMode.HTML, disable_web_page_preview=True)
 
-# Основной запуск бота
+
 if __name__ == '__main__':
     app = ApplicationBuilder().token(BOT_TOKEN).build()
-
     app.add_handler(CommandHandler("tokens", tokens_command))
-
     print("Бот запущен...")
     app.run_polling()
