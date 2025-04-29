@@ -101,13 +101,8 @@ async def get_tokens():
                             continue
 
                     if not filtered:
-                        logger.warning("Все токены отфильтрованы. Показываю только capitalizations:")
-                        for token in tokens:
-                            try:
-                                mc = float(token.get("marketCap", 0))
-                                logger.warning(f"{token.get('symbol')}: {mc}")
-                            except Exception as e:
-                                logger.warning(f"{token.get('symbol')} — ошибка при парсинге marketCap: {e}")
+                        logger.warning("Все токены отфильтрованы. Сохраняем старое значение.")
+                        return None
 
                     for idx, (token, cap) in enumerate(filtered[:15], 1):
                         name = token.get('name', 'N/A')
@@ -156,17 +151,17 @@ async def get_tokens():
                         line = f"{idx}. {name_symbol} | {mcap} | {growth_str}"
                         result.append(line)
 
-                    return "\n\n".join(result) if result else "Нет подходящих токенов"
+                    return "\n\n".join(result)
                 else:
-                    return f"Ошибка {response.status}"
+                    return None
     except Exception as e:
         logger.exception("Ошибка при обращении к BigPump API")
-        return f"Ошибка при запросе: {str(e)}"
+        return None
 
 async def tokens_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     global last_valid_tokens
     tokens = await get_tokens()
-    if "Нет подходящих" not in tokens:
+    if tokens:
         last_valid_tokens = tokens
 
     keyboard = InlineKeyboardMarkup([
@@ -184,25 +179,21 @@ async def refresh_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
     global last_valid_tokens
     query = update.callback_query
     await query.answer("Обновляю...")
-    tokens = await get_tokens()
-    if "Нет подходящих" not in tokens:
-        last_valid_tokens = tokens
+
+    new_tokens = await get_tokens()
+    if new_tokens:
+        last_valid_tokens = new_tokens
+    else:
+        await query.answer("Данные актуальны ✅", show_alert=False)
+        return
 
     keyboard = InlineKeyboardMarkup([
         [InlineKeyboardButton("🔁 Обновить", callback_data="refresh_tokens")]
     ])
 
     try:
-        if tokens == query.message.text_html:
-            await query.answer("Актуально ✅", show_alert=False)
-            return
-
-        if len(tokens) > 4000:
-            logger.warning(f"Сообщение слишком длинное ({len(tokens)} символов), обрезаем до 4000")
-            tokens = tokens[:4000]
-
         await query.edit_message_text(
-            tokens,
+            last_valid_tokens[:4000],
             parse_mode=ParseMode.HTML,
             disable_web_page_preview=True,
             reply_markup=keyboard
