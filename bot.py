@@ -22,7 +22,7 @@ REFERRAL_PREFIX = "prghZZEt-"
 last_valid_tokens = "Нет подходящих токенов"
 
 def address_to_user_friendly(address: str) -> str:
-    return Address(address).to_str(True, True, True)
+    return Address(address).to_string(is_user_friendly=True, is_bounceable=True, is_test_only=False)
 
 async def get_ton_price():
     url = 'https://api.coingecko.com/api/v3/simple/price?ids=the-open-network&vs_currencies=usd'
@@ -77,16 +77,17 @@ async def get_tokens():
 
                         mcap = f"<b>${cap/1000:.1f}K</b>" if cap >= 1_000 else f"<b>${cap:.2f}</b>"
 
-                        if not address:
-                            continue
+                        name_symbol = f'{name} ({symbol})'
 
-                        try:
-                            encoded_address = address_to_user_friendly(address)
-                            link = f"https://t.me/tontrade?start={REFERRAL_PREFIX}{encoded_address}"
-                            name_symbol = f'<a href="{link}">{name} ({symbol})</a>'
-                        except Exception as e:
-                            logger.warning(f"Ошибка при кодировании адреса {address}: {e}")
-                            name_symbol = f'{name} ({symbol})'
+                        if address:
+                            try:
+                                logger.info(f"Кодирую адрес: {address}")
+                                encoded_address = address_to_user_friendly(address)
+                                logger.info(f"Получен EQ адрес: {encoded_address}")
+                                link = f"https://t.me/tontrade?start={REFERRAL_PREFIX}{encoded_address}"
+                                name_symbol = f'<a href="{link}">{name} ({symbol})</a>'
+                            except Exception as e:
+                                logger.warning(f"Ошибка при кодировании адреса {address}: {e}")
 
                         emoji = ""
                         try:
