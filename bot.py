@@ -20,40 +20,34 @@ REFERRAL_PREFIX = "prghZZEt-"
 
 last_valid_tokens = "Нет подходящих токенов"
 
-def crc16_ccitt_false(data: bytes) -> int:
-    crc = 0xFFFF
-    for b in data:
-        crc ^= b << 8
-        for _ in range(8):
-            if crc & 0x8000:
-                crc = (crc << 1) ^ 0x1021
-            else:
-                crc <<= 1
-            crc &= 0xFFFF
-    return crc
-
 def address_to_base64url(address: str) -> str:
+    def crc16(data: bytes) -> bytes:
+        crc = 0xFFFF
+        for b in data:
+            crc ^= b << 8
+            for _ in range(8):
+                if crc & 0x8000:
+                    crc = (crc << 1) ^ 0x1021
+                else:
+                    crc <<= 1
+                crc &= 0xFFFF
+        return crc.to_bytes(2, 'big')
+
     address = address.strip()
     if ':' not in address:
         raise ValueError("Некорректный адрес: отсутствует ':'")
 
     wc_str, hex_part = address.split(':')
     wc = int(wc_str)
-    hex_part = hex_part.lower()
-
-    if len(hex_part) != 64:
-        raise ValueError(f"HEX-часть адреса должна быть длиной 64 символа, а не {len(hex_part)}")
-
     addr_bytes = bytes.fromhex(hex_part)
 
-    tag = 0x11
-    workchain_byte = wc.to_bytes(1, byteorder='big', signed=True)
-    data = bytes([tag]) + workchain_byte + addr_bytes
+    tag = b'\x11'
+    wc_byte = wc.to_bytes(1, 'big', signed=True)
+    full = tag + wc_byte + addr_bytes
+    checksum = crc16(full)
+    full_with_crc = full + checksum
 
-    checksum = crc16_ccitt_false(data).to_bytes(2, 'big')
-    full_data = data + checksum
-
-    return base64.urlsafe_b64encode(full_data).decode().rstrip('=')
+    return base64.urlsafe_b64encode(full_with_crc).decode().rstrip('=')
 
 async def get_ton_price():
     url = 'https://api.coingecko.com/api/v3/simple/price?ids=the-open-network&vs_currencies=usd'
@@ -76,7 +70,7 @@ async def get_tokens():
         'origin': 'https://bigpump.app',
         'referer': 'https://bigpump.app/',
         'user-agent': 'Mozilla/5.0'
-    }  # НЕ ТРОГАТЬ!
+    }
     try:
         async with aiohttp.ClientSession() as session:
             async with session.get(url, headers=headers) as response:
