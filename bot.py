@@ -1,7 +1,7 @@
 import os
 import asyncio
 import logging
-from telegram import Bot, Update
+from telegram import Update
 from telegram.ext import Application, CommandHandler, ContextTypes
 import httpx
 
@@ -28,7 +28,7 @@ async def fetch_new_listings():
             logger.error(f"Ошибка запроса к BigPump API: {e}")
             return []
 
-async def update_listings(chat_id=None, bot=None):
+async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     listings = await fetch_new_listings()
     if not listings:
         message = "Нет новых листингов с BigPump."
@@ -41,18 +41,11 @@ async def update_listings(chat_id=None, bot=None):
             tv_url = f"https://tonviewer.com/{address}"
             message += f"{i}. {name} ({symbol}) — [TonViewer]({tv_url})\n"
 
-    if bot and chat_id:
-        await bot.send_message(chat_id=chat_id, text=message, parse_mode="Markdown")
-
-async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    await update_listings(chat_id=update.effective_chat.id, bot=context.bot)
+    await update.message.reply_text(message, parse_mode="Markdown")
 
 async def main():
     application = Application.builder().token(BOT_TOKEN).build()
     application.add_handler(CommandHandler("start", start))
-
-    await application.initialize()
-    await application.start()
     await application.bot.set_my_commands([("start", "Получить новые листинги BigPump")])
     await application.run_polling()
 
