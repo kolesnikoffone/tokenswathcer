@@ -115,14 +115,14 @@ async def send_tokens(chat_id, context: ContextTypes.DEFAULT_TYPE, message_id=No
     except Exception as e:
         logger.error(f"Ошибка при получении токенов: {e}")
 
-async def main():
-    application = Application.builder().token(API_TOKEN).build()
-
-    application.add_handler(CommandHandler("start", start))
-    application.add_handler(CommandHandler("tokens", tokens))
-    application.add_handler(CallbackQueryHandler(refresh_tokens, pattern="refresh_tokens"))
-
-    await application.run_polling()
-
 if __name__ == "__main__":
-    asyncio.run(main())
+    import asyncio
+    from telegram.ext import ApplicationBuilder
+
+    app = ApplicationBuilder().token(API_TOKEN).build()
+
+    app.add_handler(CommandHandler("start", start))
+    app.add_handler(CommandHandler("tokens", tokens))
+    app.add_handler(CallbackQueryHandler(refresh_tokens, pattern="refresh_tokens"))
+
+    app.run_polling()
