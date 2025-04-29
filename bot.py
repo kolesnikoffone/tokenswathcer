@@ -3,14 +3,16 @@ import os
 import aiohttp
 import base64
 import crcmod
-from telegram import InlineKeyboardButton, InlineKeyboardMarkup, Update
+from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.constants import ParseMode
 from telegram.ext import ApplicationBuilder, CommandHandler, CallbackQueryHandler, ContextTypes
 
+# Получаем токен из переменных окружения
 BOT_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN")
 if not BOT_TOKEN:
     raise ValueError("Переменная окружения TELEGRAM_BOT_TOKEN не установлена")
 
+# Настройка логгирования
 logging.basicConfig(
     format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
     level=logging.INFO
@@ -18,7 +20,7 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 REFERRAL_PREFIX = "prghZZEt-"
-latest_tokens_result = None
+LATEST_RESULT = None
 
 
 def address_to_base64url(address: str) -> str:
@@ -26,19 +28,20 @@ def address_to_base64url(address: str) -> str:
     if ':' in address:
         wc_str, hex_addr = address.split(':')
         wc = int(wc_str)
-        addr_bytes = bytes.fromhex(hex_addr)
+        hex_addr = bytes.fromhex(hex_addr)
     else:
         wc = 0
-        addr_bytes = bytes.fromhex(address)
+        hex_addr = bytes.fromhex(address)
 
-    tag = 0x11
-    wc_byte = wc.to_bytes(1, byteorder="big", signed=True)
-    data = bytes([tag]) + wc_byte + addr_bytes
+    tag = 0x11  # 0x11 = bounceable address, non-testnet
+    workchain_byte = wc.to_bytes(1, byteorder="big", signed=True)
+    addr_data = bytes([tag]) + workchain_byte + hex_addr
 
     crc16 = crcmod.predefined.mkPredefinedCrcFun('crc-ccitt-false')
-    checksum = crc16(data).to_bytes(2, 'big')
-    full = data + checksum
-    return base64.urlsafe_b64encode(full).decode()  # НЕ удаляем padding
+    checksum = crc16(addr_data).to_bytes(2, 'big')
+
+    full_data = addr_data + checksum
+    return base64.urlsafe_b64encode(full_data).decode()
 
 
 async def get_ton_price():
@@ -89,7 +92,7 @@ async def get_tokens():
                         address = token.get('address')
                         change = token.get('priceChange1H')
 
-                        mcap = f"<b>${cap/1000:.1f}K</b>" if cap >= 1_000 else f"<b>${cap:.2f}</b>"
+                        mcap = f"<b>${cap/1000:.1f}K</b>" if cap >= 1000 else f"<b>${cap:.2f}</b>"
 
                         if address:
                             encoded_address = address_to_base64url(address)
@@ -126,44 +129,49 @@ async def get_tokens():
                         line = f"{idx}. {name_symbol} | {mcap} | {growth_str}"
                         result.append(line)
 
-                    return "\n\n".join(result) if result else "Нет подходящих токенов"
+                    return ["\n\n".join(result)] if result else ["Нет подходящих токенов"]
                 else:
-                    return f"Ошибка {response.status}"
+                    return [f"Ошибка {response.status}"]
     except Exception as e:
         logger.exception("Ошибка при обращении к BigPump API")
-        return f"Ошибка при запросе: {str(e)}"
+        return [f"Ошибка при запросе: {str(e)}"]
 
 
 async def listings_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    global latest_tokens_result
-    result = await get_tokens()
-    if result:
-        latest_tokens_result = result
-        keyboard = InlineKeyboardMarkup([
-            [InlineKeyboardButton("🔄 Обновить", callback_data="refresh")]
-        ])
-        await update.message.reply_text(result, parse_mode=ParseMode.HTML, disable_web_page_preview=True, reply_markup=keyboard)
+    global LATEST_RESULT
+    if LATEST_RESULT:
+        tokens = LATEST_RESULT
+    else:
+        tokens = await get_tokens()
+        if tokens:
+            LATEST_RESULT = tokens
+
+    message = await update.message.reply_text(tokens[0], parse_mode=ParseMode.HTML, disable_web_page_preview=True, reply_markup=InlineKeyboardMarkup([
+        [InlineKeyboardButton("Обновить", callback_data="refresh")]
+    ]))
+    context.chat_data['last_message_id'] = message.message_id
 
 
-async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    global latest_tokens_result
+async def refresh_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    global LATEST_RESULT
     query = update.callback_query
     await query.answer()
-    result = await get_tokens()
-    if result and result != latest_tokens_result:
-        latest_tokens_result = result
-        keyboard = InlineKeyboardMarkup([
-            [InlineKeyboardButton("🔄 Обновить", callback_data="refresh")]
-        ])
-        try:
-            await query.edit_message_text(text=result, parse_mode=ParseMode.HTML, disable_web_page_preview=True, reply_markup=keyboard)
-        except Exception as e:
-            logger.warning(f"Не удалось обновить сообщение: {e}")
+
+    tokens = await get_tokens()
+    if tokens:
+        LATEST_RESULT = tokens
+
+    try:
+        await query.edit_message_text(tokens[0], parse_mode=ParseMode.HTML, disable_web_page_preview=True, reply_markup=InlineKeyboardMarkup([
+            [InlineKeyboardButton("Обновить", callback_data="refresh")]
+        ]))
+    except Exception as e:
+        logger.warning(f"Ошибка обновления сообщения: {e}")
 
 
 if __name__ == '__main__':
     app = ApplicationBuilder().token(BOT_TOKEN).build()
     app.add_handler(CommandHandler("listings", listings_command))
-    app.add_handler(CallbackQueryHandler(button_callback))
+    app.add_handler(CallbackQueryHandler(refresh_callback, pattern="^refresh$"))
     print("Бот запущен...")
     app.run_polling()
