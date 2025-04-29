@@ -21,28 +21,33 @@ REFERRAL_PREFIX = "prghZZEt-"
 
 def address_to_base64url(address: str, bounceable: bool = True, testnet: bool = False) -> str:
     address = address.strip()
-    if ':' in address:
-        wc, hex_addr = address.split(':')
-        wc = int(wc)
-        hex_addr = bytes.fromhex(hex_addr)
-    else:
-        wc = 0
-        hex_addr = bytes.fromhex(address)
+    if ':' not in address:
+        raise ValueError("Некорректный адрес: отсутствует ':'")
 
-    tag = 0x11 if bounceable else 0x51
+    wc_str, hex_part = address.split(':')
+    wc = int(wc_str)
+    hex_part = hex_part.lower()
+
+    if len(hex_part) != 64:
+        raise ValueError(f"HEX-часть адреса должна быть длиной 64 символа, а не {len(hex_part)}")
+
+    addr_bytes = bytes.fromhex(hex_part)
+
+    tag = 0x11  # bounceable=True, testnet=False
+    if not bounceable:
+        tag = 0x51
     if testnet:
         tag |= 0x80
 
-    workchain_byte = wc.to_bytes(1, byteorder="big", signed=True)
-    data = bytes([tag]) + workchain_byte + hex_addr
+    workchain_byte = wc.to_bytes(1, byteorder='big', signed=True)
+    data = bytes([tag]) + workchain_byte + addr_bytes
 
     crc16 = crcmod.predefined.mkPredefinedCrcFun('crc-ccitt-false')
     checksum = crc16(data).to_bytes(2, 'big')
 
     full_data = data + checksum
-
-    encoded = base64.urlsafe_b64encode(full_data).decode()
-    return encoded.rstrip('=')
+    b64url = base64.urlsafe_b64encode(full_data).decode().rstrip('=')
+    return b64url
 
 async def get_ton_price():
     url = 'https://api.coingecko.com/api/v3/simple/price?ids=the-open-network&vs_currencies=usd'
