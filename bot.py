@@ -34,8 +34,7 @@ async def update_listings(chat_id=None, bot=None):
     if not listings:
         message = "Нет новых листингов с BigPump."
     else:
-        message = "🆕 *Новые токены BigPump:*
-"
+        message = "🆕 *Новые токены BigPump:*\n"
         for i, token in enumerate(listings[:10], 1):
             name = token.get("name", "Без названия")
             symbol = token.get("symbol", "-")
