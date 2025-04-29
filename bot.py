@@ -22,7 +22,7 @@ REFERRAL_PREFIX = "prghZZEt-"
 last_valid_tokens = "Нет подходящих токенов"
 
 def address_to_user_friendly(address: str) -> str:
-    return Address(address).to_string(is_user_friendly=True, is_bounceable=True, is_test_only=False)
+    return Address(address).to_string(is_user_friendly=True, is_bounceable=True, is_test_only=False, url_safe=True)
 
 async def get_ton_price():
     url = 'https://api.coingecko.com/api/v3/simple/price?ids=the-open-network&vs_currencies=usd'
@@ -166,11 +166,8 @@ async def refresh_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
         )
     except Exception as e:
         logger.exception(f"Ошибка при обновлении сообщения: {e}")
-        await query.message.reply_text(
-            "Не удалось обновить сообщение. Попробуйте снова позже.",
-            parse_mode=ParseMode.HTML,
-            disable_web_page_preview=True
-        )
+        # Ничего не выводим в чат при ошибке, чтобы не раздражать пользователя
+        pass
 
 if __name__ == '__main__':
     app = ApplicationBuilder().token(BOT_TOKEN).build()
