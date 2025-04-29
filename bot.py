@@ -88,10 +88,10 @@ async def get_tokens():
 
 # Обработчик команды /tokens
 async def tokens_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    await update.message.reply_text("Получаю токены с BigPump...")
+    await update.effective_chat.send_message("Получаю токены с BigPump...")
     tokens = await get_tokens()
     for t in tokens:
-        await update.message.reply_text(t, parse_mode=ParseMode.HTML, disable_web_page_preview=True)
+        await update.effective_chat.send_message(t, parse_mode=ParseMode.HTML, disable_web_page_preview=True)
 
 # Основной запуск бота
 if __name__ == '__main__':
