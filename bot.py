@@ -42,7 +42,12 @@ async def get_tokens():
                         cap = token.get('marketCap')
                         change = token.get('priceChange1H')
 
-                        mcap = f"${int(cap)/1e3:.1f}K" if cap else "N/A"
+                        if cap:
+                            cap = float(cap)
+                            mcap = f"${cap / 1e6:.1f}M" if cap >= 1e6 else f"${cap / 1e3:.1f}K"
+                        else:
+                            mcap = "N/A"
+
                         growth = f"{float(change):.2f}%" if change else "N/A"
 
                         result.append(f"{name} ({symbol}) | {mcap} | {growth}")
