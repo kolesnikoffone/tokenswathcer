@@ -5,6 +5,7 @@ import base64
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.constants import ParseMode
 from telegram.ext import ApplicationBuilder, CommandHandler, ContextTypes, CallbackQueryHandler
+from tonsdk.utils import Address
 
 BOT_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN")
 if not BOT_TOKEN:
@@ -21,26 +22,7 @@ REFERRAL_PREFIX = "prghZZEt-"
 last_valid_tokens = "Нет подходящих токенов"
 
 def address_to_user_friendly(address: str) -> str:
-    def crc16(data: bytes) -> bytes:
-        crc = 0xFFFF
-        for b in data:
-            crc ^= b << 8
-            for _ in range(8):
-                if crc & 0x8000:
-                    crc = (crc << 1) ^ 0x1021
-                else:
-                    crc <<= 1
-                crc &= 0xFFFF
-        return crc.to_bytes(2, 'big')
-
-    wc_str, hex_part = address.split(':')
-    wc = int(wc_str)
-    addr_bytes = bytes.fromhex(hex_part)
-    tag = b'\x11'
-    wc_byte = wc.to_bytes(1, 'big', signed=True)
-    body = tag + wc_byte + addr_bytes
-    checksum = crc16(body)
-    return base64.urlsafe_b64encode(body + checksum).decode().rstrip('=')
+    return Address(address).to_str(True, True, True)
 
 async def get_ton_price():
     url = 'https://api.coingecko.com/api/v3/simple/price?ids=the-open-network&vs_currencies=usd'
