@@ -32,7 +32,7 @@ def crc16_ccitt_false(data: bytes) -> int:
             crc &= 0xFFFF
     return crc
 
-def address_to_base64url(address: str, bounceable: bool = True, testnet: bool = False) -> str:
+def address_to_base64url(address: str, strip_crc: bool = True) -> str:
     address = address.strip()
     if ':' not in address:
         raise ValueError("Некорректный адрес: отсутствует ':'")
@@ -46,18 +46,17 @@ def address_to_base64url(address: str, bounceable: bool = True, testnet: bool = 
 
     addr_bytes = bytes.fromhex(hex_part)
 
-    tag = 0x11 if bounceable else 0x51
-    if testnet:
-        tag |= 0x80
-
+    tag = 0x11
     workchain_byte = wc.to_bytes(1, byteorder='big', signed=True)
     data = bytes([tag]) + workchain_byte + addr_bytes
 
     checksum = crc16_ccitt_false(data).to_bytes(2, 'big')
     full_data = data + checksum
 
-    b64url = base64.urlsafe_b64encode(full_data).decode().rstrip('=')
-    return b64url
+    if strip_crc:
+        return base64.urlsafe_b64encode(data).decode().rstrip('=')
+    else:
+        return base64.urlsafe_b64encode(full_data).decode().rstrip('=')
 
 async def get_ton_price():
     url = 'https://api.coingecko.com/api/v3/simple/price?ids=the-open-network&vs_currencies=usd'
@@ -116,7 +115,7 @@ async def get_tokens():
                             continue
 
                         try:
-                            encoded_address = address_to_base64url(address)
+                            encoded_address = address_to_base64url(address, strip_crc=True)
                             link = f"https://t.me/tontrade?start={REFERRAL_PREFIX}{encoded_address}"
                             name_symbol = f'<a href="{link}">{name} ({symbol})</a>'
                         except Exception as e:
