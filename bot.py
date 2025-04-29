@@ -59,8 +59,8 @@ async def get_tokens():
                         symbol = token.get('symbol')
 
                         try:
-                            ton_collected = float(token.get('tonLiqCollected') or 0)
-                            cap = ton_collected * ton_usd_price
+                            market_cap_raw = token.get('marketCap') or "0"
+                            cap = float(market_cap_raw) * ton_usd_price / 1e9
                         except:
                             cap = 0
 
