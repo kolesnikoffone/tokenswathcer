@@ -1,8 +1,8 @@
 import os
 import asyncio
 import logging
-from telegram import Bot
-from telegram.ext import Application, CommandHandler
+from telegram import Bot, Update
+from telegram.ext import Application, CommandHandler, ContextTypes
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 import httpx
 
@@ -10,29 +10,32 @@ logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 BOT_TOKEN = os.getenv("BOT_TOKEN")
-CHAT_ID = os.getenv("TELEGRAM_CHAT_ID")
-
-if not BOT_TOKEN or not CHAT_ID:
-    raise EnvironmentError("BOT_TOKEN or TELEGRAM_CHAT_ID not set in environment.")
+if not BOT_TOKEN:
+    raise EnvironmentError("BOT_TOKEN not set in environment.")
 
 API_URL = "https://prod-api.bigpump.app/api/v1/coins?sortType=new&limit=20"
 
 async def fetch_new_listings():
     async with httpx.AsyncClient() as client:
         try:
-            response = await client.get(API_URL, headers={"accept": "*/*", "origin": "https://bigpump.app", "referer": "https://bigpump.app/"})
+            response = await client.get(API_URL, headers={
+                "accept": "*/*",
+                "origin": "https://bigpump.app",
+                "referer": "https://bigpump.app/"
+            })
             response.raise_for_status()
             return response.json().get("data", [])
         except Exception as e:
             logger.error(f"Ошибка запроса к BigPump API: {e}")
             return []
 
-async def update_listings():
+async def update_listings(chat_id=None, bot=None):
     listings = await fetch_new_listings()
     if not listings:
         message = "Нет новых листингов с BigPump."
     else:
-        message = "🆕 *Новые токены BigPump:*\n"
+        message = "🆕 *Новые токены BigPump:*
+"
         for i, token in enumerate(listings[:10], 1):
             name = token.get("name", "Без названия")
             symbol = token.get("symbol", "-")
@@ -40,15 +43,20 @@ async def update_listings():
             tv_url = f"https://tonviewer.com/{address}"
             message += f"{i}. {name} ({symbol}) — [TonViewer]({tv_url})\n"
 
-    bot = Bot(BOT_TOKEN)
-    await bot.send_message(chat_id=CHAT_ID, text=message, parse_mode="Markdown")
+    if bot and chat_id:
+        await bot.send_message(chat_id=chat_id, text=message, parse_mode="Markdown")
+
+async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    await update_listings(chat_id=update.effective_chat.id, bot=context.bot)
 
 async def main():
     application = Application.builder().token(BOT_TOKEN).build()
 
     scheduler = AsyncIOScheduler()
-    scheduler.add_job(update_listings, "interval", minutes=30)
+    scheduler.add_job(lambda: update_listings(), "interval", minutes=30)
     scheduler.start()
+
+    application.add_handler(CommandHandler("start", start))
 
     await application.initialize()
     await application.start()
