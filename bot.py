@@ -1,21 +1,19 @@
-import asyncio
+""import asyncio
 import logging
 import httpx
 import base64
 import os
-from aiogram import Bot, Dispatcher, types
-from aiogram.types import InlineKeyboardButton, InlineKeyboardMarkup
-from aiogram.filters import CommandStart, Command
-from aiogram import F
+from telegram import Update
+from telegram.constants import ParseMode
+from telegram.ext import ApplicationBuilder, CommandHandler, ContextTypes
 
-API_TOKEN = os.getenv('API_TOKEN')
+BOT_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN")
+if not BOT_TOKEN:
+    raise ValueError("Переменная окружения TELEGRAM_BOT_TOKEN не установлена")
+
 BIGPUMP_API_URL = 'https://prod-api.bigpump.app/api/v1/coins/list?limit=150&sort=liq_mcap&order=desc'
-BIGPUMP_API_TOKEN = os.getenv('BIGPUMP_API_TOKEN')
 TON_API_URL = 'https://api.ton.sh/rates'
 REFERRAL_PREFIX = 'prghZZEt-'
-
-bot = Bot(token=API_TOKEN)
-dp = Dispatcher()
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -34,10 +32,9 @@ def address_to_base64url(address: str) -> str:
 
 async def fetch_bigpump_data():
     headers = {
-        'Authorization': f'Bearer {BIGPUMP_API_TOKEN}',
         'Origin': 'https://bigpump.app',
         'Referer': 'https://bigpump.app/',
-        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/112.0.0.0 Safari/537.36'
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/112.0.0.0 Safari/537.36',
     }
     async with httpx.AsyncClient() as client:
         response = await client.get(BIGPUMP_API_URL, headers=headers)
@@ -51,20 +48,7 @@ async def fetch_ton_price():
         data = response.json()
         return float(data["rates"]["TON"]["prices"]["USD"])
 
-@dp.message(CommandStart())
-async def start_handler(message: types.Message):
-    await message.answer("Напиши /tokens чтобы увидеть топ токены.")
-
-@dp.message(Command("tokens"))
-async def tokens_handler(message: types.Message):
-    await send_tokens(message.chat.id)
-
-@dp.callback_query(F.data == "refresh_tokens")
-async def refresh_tokens_handler(callback_query: types.CallbackQuery):
-    await send_tokens(callback_query.message.chat.id, callback_query.message.message_id)
-    await callback_query.answer()
-
-async def send_tokens(chat_id, message_id=None):
+async def tokens_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     try:
         bigpump_data = await fetch_bigpump_data()
         ton_price = await fetch_ton_price()
@@ -73,9 +57,7 @@ async def send_tokens(chat_id, message_id=None):
         filtered_tokens = [
             token for token in tokens
             if token.get("marketCap") and (float(token["marketCap"]) / 10**9 * ton_price) >= 11000
-        ]
-
-        filtered_tokens = filtered_tokens[:30]
+        ][:15]
 
         result = []
         for idx, token in enumerate(filtered_tokens, start=1):
@@ -87,7 +69,7 @@ async def send_tokens(chat_id, message_id=None):
 
             if mcap_value:
                 mcap = float(mcap_value) / 10**9 * ton_price
-                mcap_str = f"<b>${mcap/1000:.1f}K</b>"
+                mcap_str = f"${mcap/1000:.1f}K"
             else:
                 mcap_str = "N/A"
 
@@ -125,30 +107,21 @@ async def send_tokens(chat_id, message_id=None):
 
             growth_str = f"{emoji} {growth}%" if growth != "N/A" else "N/A"
 
-            line = f"{idx}. {clickable_name} | {mcap_str} | {growth_str}\n{chr(8212) * 35}"
+            line = f"{idx}. {clickable_name} | {mcap_str} | {growth_str}\n{'\u2014'*35}"
             result.append(line)
 
-        if result and result[-1].endswith(chr(8212) * 35):
+        if result and result[-1].endswith('\u2014'*35):
             result[-1] = result[-1].rsplit("\n", 1)[0]
 
-        final_text = "\n".join(result[:15])
-
-        markup = InlineKeyboardMarkup(
-            inline_keyboard=[
-                [InlineKeyboardButton(text="🔄 Обновить", callback_data="refresh_tokens")]
-            ]
-        )
-
-        if message_id:
-            await bot.edit_message_text(chat_id=chat_id, message_id=message_id, text=final_text, reply_markup=markup, parse_mode='HTML', disable_web_page_preview=True)
-        else:
-            await bot.send_message(chat_id=chat_id, text=final_text, reply_markup=markup, parse_mode='HTML', disable_web_page_preview=True)
+        final_text = "\n".join(result)
+        await update.message.reply_text(final_text, parse_mode=ParseMode.HTML, disable_web_page_preview=True)
 
     except Exception as e:
         logger.error(f"Ошибка при получении токенов: {e}")
+        await update.message.reply_text("Произошла ошибка при получении токенов.")
 
-async def main():
-    await dp.start_polling(bot)
-
-if __name__ == "__main__":
-    asyncio.run(main())
+if __name__ == '__main__':
+    app = ApplicationBuilder().token(BOT_TOKEN).build()
+    app.add_handler(CommandHandler("tokens", tokens_command))
+    print("Бот запущен...")
+    app.run_polling()
