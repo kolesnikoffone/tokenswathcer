@@ -32,15 +32,14 @@ async def update_listings():
     if not listings:
         message = "Нет новых листингов с BigPump."
     else:
-        message = "🆕 *Новые токены BigPump:*
-"
+        message = "🆕 *Новые токены BigPump:*\n"
         for i, token in enumerate(listings[:10], 1):
             name = token.get("name", "Без названия")
             symbol = token.get("symbol", "-")
             address = token.get("address")
             tv_url = f"https://tonviewer.com/{address}"
             message += f"{i}. {name} ({symbol}) — [TonViewer]({tv_url})\n"
-    
+
     bot = Bot(BOT_TOKEN)
     await bot.send_message(chat_id=CHAT_ID, text=message, parse_mode="Markdown")
 
