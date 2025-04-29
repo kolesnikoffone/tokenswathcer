@@ -1,34 +1,45 @@
 import asyncio
 import logging
-import os
 import httpx
-from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
-from telegram.ext import Application, CommandHandler, CallbackQueryHandler, ContextTypes
+import base64
+import os
+from aiogram import Bot, Dispatcher, types
+from aiogram.types import InlineKeyboardButton, InlineKeyboardMarkup
+from aiogram.filters import CommandStart, Command
+from aiogram import F
 
-API_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN")
+API_TOKEN = os.getenv('API_TOKEN')
 BIGPUMP_API_URL = 'https://prod-api.bigpump.app/api/v1/coins/list?limit=150&sort=liq_mcap&order=desc'
+BIGPUMP_API_TOKEN = os.getenv('BIGPUMP_API_TOKEN')
 TON_API_URL = 'https://api.ton.sh/rates'
+REFERRAL_PREFIX = 'prghZZEt-'
+TELEGRAM_RAW_DATA = os.getenv('TELEGRAM_RAW_DATA')
+
+bot = Bot(token=API_TOKEN)
+dp = Dispatcher()
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
-separator = '—' * 35
+def address_to_base64url(address: str) -> str:
+    address = address.strip()
+    if ':' in address:
+        wc, hex_addr = address.split(':')
+        wc = int(wc)
+        hex_addr = bytes.fromhex(hex_addr)
+        full_addr = bytes([wc]) + hex_addr
+    else:
+        full_addr = bytes.fromhex(address)
+    b64 = base64.urlsafe_b64encode(full_addr).rstrip(b'=').decode('utf-8')
+    return b64
 
 async def fetch_bigpump_data():
     headers = {
-        "accept": "*/*",
-        "accept-language": "ru-RU,ru;q=0.9,en-US;q=0.8,en;q=0.7",
-        "origin": "https://bigpump.app",
-        "priority": "u=1, i",
-        "referer": "https://bigpump.app/",
-        "sec-ch-ua": '"Not(A:Brand";v="99", "Google Chrome";v="133", "Chromium";v="133"',
-        "sec-ch-ua-mobile": "?1",
-        "sec-ch-ua-platform": '"Android"',
-        "sec-fetch-dest": "empty",
-        "sec-fetch-mode": "cors",
-        "sec-fetch-site": "same-site",
-        "telegramrawdata": "query_id=AAEaYrUMAAAAABpitQwu6gcp&user=%7B%22id%22%3A213213722%2C%22first_name%22%3A%22Igor%22%2C%22last_name%22%3A%22Koles%22%2C%22username%22%3A%22kolesnikoffone%22%2C%22language_code%22%3A%22en%22%2C%22is_premium%22%3Atrue%2C%22allows_write_to_pm%22%3Atrue%2C%22photo_url%22%3A%22https%3A%5C%2F%5C%2Ft.me%5C%2Fi%5C%2Fuserpic%5C%2F320%5C%2FLOS2-JjhnhmjzAqoRwJhBdgkfv48pIMkDeo8El8OkCc.svg%22%7D&auth_date=1739471509&signature=_BACnt92QPix6-bfrlGuo5HiA4XBiSI6BP-v3jQRUVJqp2N8ydUMmWGixj4e9s9x0o0xONFOa51eo2W1JfbYBQ&hash=0c3fd36bf663249d93da37b949087c716d9e883171da0fa107f026bf439bd9d3",
-        "user-agent": "Mozilla/5.0 (Linux; Android 13; Pixel 7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/133.0.0.0 Mobile Safari/537.36"
+        'Authorization': f'Bearer {BIGPUMP_API_TOKEN}',
+        'Origin': 'https://bigpump.app',
+        'Referer': 'https://bigpump.app/',
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/112.0.0.0 Safari/537.36',
+        'telegramrawdata': TELEGRAM_RAW_DATA
     }
     async with httpx.AsyncClient() as client:
         response = await client.get(BIGPUMP_API_URL, headers=headers)
@@ -42,18 +53,20 @@ async def fetch_ton_price():
         data = response.json()
         return float(data["rates"]["TON"]["prices"]["USD"])
 
-async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    await update.message.reply_text("Напиши /tokens чтобы увидеть топ токены.")
+@dp.message(CommandStart())
+async def start_handler(message: types.Message):
+    await message.answer("Напиши /tokens чтобы увидеть топ токены.")
 
-async def tokens(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    await send_tokens(update.effective_chat.id, context)
+@dp.message(Command("tokens"))
+async def tokens_handler(message: types.Message):
+    await send_tokens(message.chat.id)
 
-async def refresh_tokens(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    query = update.callback_query
-    await query.answer()
-    await send_tokens(query.message.chat.id, context, query.message.message_id)
+@dp.callback_query(F.data == "refresh_tokens")
+async def refresh_tokens_handler(callback_query: types.CallbackQuery):
+    await send_tokens(callback_query.message.chat.id, callback_query.message.message_id)
+    await callback_query.answer()
 
-async def send_tokens(chat_id, context: ContextTypes.DEFAULT_TYPE, message_id=None):
+async def send_tokens(chat_id, message_id=None):
     try:
         bigpump_data = await fetch_bigpump_data()
         ton_price = await fetch_ton_price()
@@ -70,9 +83,9 @@ async def send_tokens(chat_id, context: ContextTypes.DEFAULT_TYPE, message_id=No
         for idx, token in enumerate(filtered_tokens, start=1):
             name = token.get("name", "N/A")
             symbol = token.get("symbol", "N/A")
-            address = token.get("address", "")
             mcap_value = token.get("marketCap")
             growth = token.get("priceChange1H", "N/A")
+            address = token.get("address", None)
 
             if mcap_value:
                 mcap = float(mcap_value) / 10**9 * ton_price
@@ -80,8 +93,12 @@ async def send_tokens(chat_id, context: ContextTypes.DEFAULT_TYPE, message_id=No
             else:
                 mcap_str = "N/A"
 
-            ref_address = address.replace(":", "")
-            name_symbol = f"<a href='https://t.me/tontrade?start=prghZZEt-{ref_address}'>{name} ({symbol})</a>"
+            if address:
+                encoded_address = address_to_base64url(address)
+                token_link = f"https://t.me/tontrade?start={REFERRAL_PREFIX}{encoded_address}"
+                clickable_name = f'<a href="{token_link}">{name} ({symbol})</a>'
+            else:
+                clickable_name = f'{name} ({symbol})'
 
             emoji = ""
             if growth != "N/A":
@@ -110,34 +127,30 @@ async def send_tokens(chat_id, context: ContextTypes.DEFAULT_TYPE, message_id=No
 
             growth_str = f"{emoji} {growth}%" if growth != "N/A" else "N/A"
 
-            line = f"{idx}. {name_symbol} | {mcap_str} | {growth_str}\n{separator}"
+            line = f"{idx}. {clickable_name} | {mcap_str} | {growth_str}\n{chr(8212) * 35}"
             result.append(line)
 
-        if result and result[-1].endswith(separator):
+        if result and result[-1].endswith(chr(8212) * 35):
             result[-1] = result[-1].rsplit("\n", 1)[0]
 
         final_text = "\n".join(result[:15])
 
         markup = InlineKeyboardMarkup(
-            [[InlineKeyboardButton("🔄 Обновить", callback_data="refresh_tokens")]]
+            inline_keyboard=[
+                [InlineKeyboardButton(text="🔄 Обновить", callback_data="refresh_tokens")]
+            ]
         )
 
         if message_id:
-            await context.bot.edit_message_text(chat_id=chat_id, message_id=message_id, text=final_text, reply_markup=markup, parse_mode='HTML', disable_web_page_preview=True)
+            await bot.edit_message_text(chat_id=chat_id, message_id=message_id, text=final_text, reply_markup=markup, parse_mode='HTML', disable_web_page_preview=True)
         else:
-            await context.bot.send_message(chat_id=chat_id, text=final_text, reply_markup=markup, parse_mode='HTML', disable_web_page_preview=True)
+            await bot.send_message(chat_id=chat_id, text=final_text, reply_markup=markup, parse_mode='HTML', disable_web_page_preview=True)
 
     except Exception as e:
         logger.error(f"Ошибка при получении токенов: {e}")
 
+async def main():
+    await dp.start_polling(bot)
+
 if __name__ == "__main__":
-    import asyncio
-    from telegram.ext import ApplicationBuilder
-
-    app = ApplicationBuilder().token(API_TOKEN).build()
-
-    app.add_handler(CommandHandler("start", start))
-    app.add_handler(CommandHandler("tokens", tokens))
-    app.add_handler(CallbackQueryHandler(refresh_tokens, pattern="refresh_tokens"))
-
-    app.run_polling()
+    asyncio.run(main())
