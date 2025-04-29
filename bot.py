@@ -2,7 +2,6 @@ import logging
 import os
 import aiohttp
 import base64
-import crcmod
 from telegram import Update
 from telegram.constants import ParseMode
 from telegram.ext import ApplicationBuilder, CommandHandler, ContextTypes
@@ -25,19 +24,11 @@ def address_to_base64url(address: str) -> str:
         wc, hex_addr = address.split(':')
         wc = int(wc)
         hex_addr = bytes.fromhex(hex_addr)
+        full_addr = bytes([wc]) + hex_addr
     else:
-        wc = 0
-        hex_addr = bytes.fromhex(address)
-
-    tag = 0x11  # bounceable = 1, testnet = 0
-    workchain_byte = wc.to_bytes(1, byteorder="big", signed=True)
-    data = bytes([tag]) + workchain_byte + hex_addr
-
-    crc16 = crcmod.predefined.mkPredefinedCrcFun('crc-ccitt-false')
-    checksum = crc16(data).to_bytes(2, 'big')
-
-    full_data = data + checksum
-    return base64.urlsafe_b64encode(full_data).rstrip(b'=').decode()
+        full_addr = bytes.fromhex(address)
+    b64 = base64.urlsafe_b64encode(full_addr).rstrip(b'=').decode('utf-8')
+    return b64
 
 async def get_ton_price():
     url = 'https://api.coingecko.com/api/v3/simple/price?ids=the-open-network&vs_currencies=usd'
@@ -54,7 +45,7 @@ async def get_ton_price():
 async def get_tokens():
     url = 'https://prod-api.bigpump.app/api/v1/coins?sortType=pocketfi&limit=30'
     headers = {
-        'authorization': 'Bearer eyJhbGciOiJIUzI1NiJ9.eyJhZGRyZXNzIjoiMDpmNWI5MWRkZDBiOWM4N2VmNjUwMTFhNzlmMWRhNzE5NzIwYzVhODgwN2I1NGMxYTQwNTIyNzRmYTllMzc5YmNkIiwibmV0d29yayI6Ii0yMzkiLCJpYXQiOjE3NDI4MDY4NTMsImV4cCI6MTc3NDM2NDQ1M30.U_GaaX5psI572w4yMwAjlh8u4uFBVHdsD-zJacvWiPo',
+        'authorization': 'Bearer eyJhbGciOiJIUzI1NiJ9.eyJhZGRyZXNzIjoiMDpmNWI5MWRkZDBiOWM4N2VmNjUwMTFhNzlmMWRhNzE5NzIwYzVhODgwN2I1NGMxYTQwNTIyNzRmYTllMzc5YmNkIiwibmV0d29yayI6Ii0yMzkiLCJpYXQiOjE3NDI4MDY4NTMsImV4cCI6MTc3NDM2NDQ1M30.U_GaaX5psI572w4YmwAjlh8u4uFBVHdsD-zJacvWiPo',
         'accept': '*/*',
         'origin': 'https://bigpump.app',
         'referer': 'https://bigpump.app/',
@@ -73,7 +64,7 @@ async def get_tokens():
                     for token in tokens:
                         try:
                             cap = float(token.get("marketCap", 0)) * ton_usd_price / 1e9
-                            if cap >= 11000:
+                            if cap >= 11:
                                 filtered.append((token, cap))
                         except:
                             continue
