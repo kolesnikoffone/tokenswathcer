@@ -2,7 +2,6 @@ import logging
 import os
 import aiohttp
 import base64
-import crcmod
 from telegram import Update
 from telegram.constants import ParseMode
 from telegram.ext import ApplicationBuilder, CommandHandler, ContextTypes
@@ -21,16 +20,15 @@ REFERRAL_PREFIX = "prghZZEt-"
 
 def address_to_base64url(address: str) -> str:
     address = address.strip()
-    wc, hex_part = address.split(":")
-    wc = int(wc)
-    addr_bytes = bytes.fromhex(hex_part)
-    tag = 0x11  # bounceable, non-testnet
-    workchain_byte = wc.to_bytes(1, byteorder="big", signed=True)
-    data = bytes([tag]) + workchain_byte + addr_bytes
-    crc16 = crcmod.predefined.mkPredefinedCrcFun('crc-ccitt-false')
-    checksum = crc16(data).to_bytes(2, 'big')
-    full_data = data + checksum
-    return base64.urlsafe_b64encode(full_data).rstrip(b'=').decode('utf-8')
+    if ':' in address:
+        wc, hex_addr = address.split(':')
+        wc = int(wc)
+        hex_addr = bytes.fromhex(hex_addr)
+        full_addr = bytes([wc]) + hex_addr
+    else:
+        full_addr = bytes.fromhex(address)
+    b64 = base64.urlsafe_b64encode(full_addr).rstrip(b'=').decode('utf-8')
+    return b64
 
 async def get_ton_price():
     url = 'https://api.coingecko.com/api/v3/simple/price?ids=the-open-network&vs_currencies=usd'
@@ -51,6 +49,7 @@ async def get_tokens():
         'accept': '*/*',
         'origin': 'https://bigpump.app',
         'referer': 'https://bigpump.app/',
+        'user-agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/135.0.0.0 Safari/537.36'
     }
     try:
         async with aiohttp.ClientSession() as session:
