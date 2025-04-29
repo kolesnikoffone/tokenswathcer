@@ -1,107 +1,97 @@
+import asyncio
 import logging
-import os
-import aiohttp
-from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
-from telegram.constants import ParseMode
-from telegram.ext import ApplicationBuilder, CommandHandler, ContextTypes, CallbackQueryHandler
+import httpx
+from aiogram import Bot, Dispatcher, types
+from aiogram.types import InlineKeyboardButton, InlineKeyboardMarkup
+from aiogram.filters import CommandStart, Command
+from aiogram import F
 
-BOT_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN")
-if not BOT_TOKEN:
-    raise ValueError("Переменная окружения TELEGRAM_BOT_TOKEN не установлена")
+API_TOKEN = 'YOUR_TELEGRAM_BOT_TOKEN'
+BIGPUMP_API_URL = 'https://prod-api.bigpump.app/api/v1/coins/list?limit=50&sort=liq_mcap&order=desc'
+TON_API_URL = 'https://api.ton.sh/rates'
 
-logging.basicConfig(
-    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
-    level=logging.INFO
-)
+bot = Bot(token=API_TOKEN)
+dp = Dispatcher()
+
+logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
-async def get_ton_price():
-    url = 'https://api.coingecko.com/api/v3/simple/price?ids=the-open-network&vs_currencies=usd'
+async def fetch_bigpump_data():
+    async with httpx.AsyncClient() as client:
+        response = await client.get(BIGPUMP_API_URL)
+        response.raise_for_status()
+        return response.json()
+
+async def fetch_ton_price():
+    async with httpx.AsyncClient() as client:
+        response = await client.get(TON_API_URL)
+        response.raise_for_status()
+        data = response.json()
+        return float(data["rates"]["TON"]["prices"]["USD"])
+
+@dp.message(CommandStart())
+async def start_handler(message: types.Message):
+    await message.answer("Напиши /tokens чтобы увидеть топ токены.")
+
+@dp.message(Command("tokens"))
+async def tokens_handler(message: types.Message):
+    await send_tokens(message.chat.id)
+
+@dp.callback_query(F.data == "refresh_tokens")
+async def refresh_tokens_handler(callback_query: types.CallbackQuery):
+    await send_tokens(callback_query.message.chat.id, callback_query.message.message_id)
+    await callback_query.answer()
+
+async def send_tokens(chat_id, message_id=None):
     try:
-        async with aiohttp.ClientSession() as session:
-            async with session.get(url) as response:
-                if response.status == 200:
-                    data = await response.json()
-                    return float(data["the-open-network"]["usd"])
+        bigpump_data = await fetch_bigpump_data()
+        ton_price = await fetch_ton_price()
+        tokens = bigpump_data.get("items", [])
+
+        filtered_tokens = [
+            token for token in tokens
+            if token.get("marketCap") and (float(token["marketCap"]) / 10**9 * ton_price) >= 11000
+        ]
+
+        filtered_tokens = filtered_tokens[:30]
+
+        result = []
+        for idx, token in enumerate(filtered_tokens, start=1):
+            name = token.get("name", "N/A")
+            symbol = token.get("symbol", "N/A")
+            mcap_value = token.get("marketCap")
+            growth = token.get("priceChange1H", "N/A")
+
+            if mcap_value:
+                mcap = float(mcap_value) / 10**9 * ton_price
+                mcap_str = f"<b>${mcap/1000:.1f}K</b>"
+            else:
+                mcap_str = "N/A"
+
+            line = f"{idx}. {name} ({symbol}) | {mcap_str} | {growth}%\n{chr(8212) * 35}"
+            result.append(line)
+
+        if result and result[-1].endswith(chr(8212) * 35):
+            result[-1] = result[-1].rsplit("\n", 1)[0]
+
+        final_text = "\n".join(result[:15])
+
+        markup = InlineKeyboardMarkup(
+            inline_keyboard=[
+                [InlineKeyboardButton(text="🔄 Обновить", callback_data="refresh_tokens")]
+            ]
+        )
+
+        if message_id:
+            await bot.edit_message_text(chat_id=chat_id, message_id=message_id, text=final_text, reply_markup=markup, parse_mode='HTML')
+        else:
+            await bot.send_message(chat_id=chat_id, text=final_text, reply_markup=markup, parse_mode='HTML')
+
     except Exception as e:
-        logger.warning(f"Не удалось получить цену TON: {e}")
-    return 0
+        logger.error(f"Ошибка при получении токенов: {e}")
 
-async def get_tokens():
-    url = 'https://prod-api.bigpump.app/api/v1/coins?sortType=pocketfi&limit=50'
-    headers = {
-        'authorization': 'Bearer eyJhbGciOiJIUzI1NiJ9.eyJhZGRyZXNzIjoiMDpmNWI5MWRkZDBiOWM4N2VmNjUwMTFhNzlmMWRhNzE5NzIwYzVhODgwN2I1NGMxYTQwNTIyNzRmYTllMzc5YmNkIiwibmV0d29yayI6Ii0yMzkiLCJpYXQiOjE3NDI4MDY4NTMsImV4cCI6MTc3NDM2NDQ1M30.U_GaaX5psI572w4YmwAjlh8u4uFBVHdsD-zJacvWiPo',
-        'accept': '*/*',
-        'origin': 'https://bigpump.app',
-        'referer': 'https://bigpump.app/',
-    }
-    try:
-        async with aiohttp.ClientSession() as session:
-            async with session.get(url, headers=headers) as response:
-                logger.info(f"BigPump API responded with status {response.status}")
-                text = await response.text()
-                logger.debug(f"Raw response: {text}")
-                if response.status == 200:
-                    data = await response.json()
-                    tokens = data.get('coins', [])
-                    ton_usd_price = await get_ton_price()
-                    result = []
-                    for idx, token in enumerate(tokens):
-                        name = token.get('name')
-                        symbol = token.get('symbol')
+async def main():
+    await dp.start_polling(bot)
 
-                        try:
-                            market_cap_raw = token.get('marketCap') or "0"
-                            logger.info(f"Token: {name}, MarketCap: {market_cap_raw}, TON price: {ton_usd_price}")
-                            cap = float(market_cap_raw) * ton_usd_price / 1e9 if ton_usd_price > 0 else 0
-                        except Exception as e:
-                            logger.warning(f"Ошибка при расчете капитализации для {name}: {e}")
-                            cap = 0
-
-                        if cap < 11_000:
-                            continue
-
-                        if cap >= 1_000_000:
-                            mcap = f"<b>${cap / 1e6:.1f}M</b>"
-                        elif cap >= 1_000:
-                            mcap = f"<b>${cap / 1e3:.1f}K</b>"
-                        else:
-                            mcap = f"<b>${cap:.2f}</b>"
-
-                        change = token.get('priceChange1H')
-                        growth = f"{float(change):.2f}%" if change else "N/A"
-
-                        result.append(f"{len(result)+1}. {name} ({symbol}) | {mcap} | {growth}")
-
-                    if not result:
-                        result.append("Нет токенов в ответе от BigPump.")
-                    return ["\n".join(result[:15])]
-                else:
-                    return [f"Ошибка {response.status}: {text}"]
-    except Exception as e:
-        logger.exception("Ошибка при обращении к BigPump API")
-        return [f"Ошибка при запросе: {str(e)}"]
-
-async def tokens_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    tokens = await get_tokens()
-    for t in tokens:
-        keyboard = [[InlineKeyboardButton("Обновить", callback_data='refresh_tokens')]]
-        reply_markup = InlineKeyboardMarkup(keyboard)
-        await update.effective_chat.send_message(t, parse_mode=ParseMode.HTML, disable_web_page_preview=True, reply_markup=reply_markup)
-
-async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    query = update.callback_query
-    await query.answer()
-    if query.data == 'refresh_tokens':
-        tokens = await get_tokens()
-        if tokens:
-            await query.edit_message_text(text=tokens[0], parse_mode=ParseMode.HTML, reply_markup=query.message.reply_markup)
-
-if __name__ == '__main__':
-    app = ApplicationBuilder().token(BOT_TOKEN).build()
-
-    app.add_handler(CommandHandler("tokens", tokens_command))
-    app.add_handler(CallbackQueryHandler(button_handler))
-
-    print("Бот запущен...")
-    app.run_polling()
+if __name__ == "__main__":
+    asyncio.run(main())
