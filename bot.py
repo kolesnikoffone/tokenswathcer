@@ -3,7 +3,6 @@ import asyncio
 import logging
 from telegram import Bot, Update
 from telegram.ext import Application, CommandHandler, ContextTypes
-from apscheduler.schedulers.asyncio import AsyncIOScheduler
 import httpx
 
 logging.basicConfig(level=logging.INFO)
@@ -34,7 +33,8 @@ async def update_listings(chat_id=None, bot=None):
     if not listings:
         message = "Нет новых листингов с BigPump."
     else:
-        message = "🆕 *Новые токены BigPump:*\n"
+        message = "🆕 *Новые токены BigPump:*
+"
         for i, token in enumerate(listings[:10], 1):
             name = token.get("name", "Без названия")
             symbol = token.get("symbol", "-")
@@ -50,11 +50,6 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 async def main():
     application = Application.builder().token(BOT_TOKEN).build()
-
-    scheduler = AsyncIOScheduler()
-    scheduler.add_job(lambda: update_listings(), "interval", minutes=30)
-    scheduler.start()
-
     application.add_handler(CommandHandler("start", start))
 
     await application.initialize()
