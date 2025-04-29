@@ -32,7 +32,7 @@ async def get_ton_price():
 
 # Функция запроса данных с BigPump
 async def get_tokens():
-    url = 'https://prod-api.bigpump.app/api/v1/coins?sortType=pocketfi&limit=10'
+    url = 'https://prod-api.bigpump.app/api/v1/coins?sortType=pocketfi&limit=50'
     headers = {
         'authorization': 'Bearer eyJhbGciOiJIUzI1NiJ9.eyJhZGRyZXNzIjoiMDpmNWI5MWRkZDBiOWM4N2VmNjUwMTFhNzlmMWRhNzE5NzIwYzVhODgwN2I1NGMxYTQwNTIyNzRmYTllMzc5YmNkIiwibmV0d29yayI6Ii0yMzkiLCJpYXQiOjE3NDI4MDY4NTMsImV4cCI6MTc3NDM2NDQ1M30.U_GaaX5psI572w4YmwAjlh8u4uFBVHdsD-zJacvWiPo',
         'accept': '*/*',
@@ -79,7 +79,7 @@ async def get_tokens():
 
                     if not result:
                         result.append("Нет токенов в ответе от BigPump.")
-                    return ["\n".join(result)]
+                    return ["\n".join(result[:15])]
                 else:
                     return [f"Ошибка {response.status}: {text}"]
     except Exception as e:
