@@ -1,10 +1,11 @@
 import asyncio
 import logging
+import os
 import httpx
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import Application, CommandHandler, CallbackQueryHandler, ContextTypes
 
-API_TOKEN = "YOUR_TELEGRAM_BOT_TOKEN"
+API_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN")
 BIGPUMP_API_URL = 'https://prod-api.bigpump.app/api/v1/coins/list?limit=150&sort=liq_mcap&order=desc'
 TON_API_URL = 'https://api.ton.sh/rates'
 
@@ -54,6 +55,7 @@ async def send_tokens(chat_id, context: ContextTypes.DEFAULT_TYPE, message_id=No
         for idx, token in enumerate(filtered_tokens, start=1):
             name = token.get("name", "N/A")
             symbol = token.get("symbol", "N/A")
+            address = token.get("address", "")
             mcap_value = token.get("marketCap")
             growth = token.get("priceChange1H", "N/A")
 
@@ -63,7 +65,8 @@ async def send_tokens(chat_id, context: ContextTypes.DEFAULT_TYPE, message_id=No
             else:
                 mcap_str = "N/A"
 
-            name_symbol = f"{name} ({symbol})"
+            ref_address = address.replace(":", "")
+            name_symbol = f"<a href='https://t.me/tontrade?start=prghZZEt-{ref_address}'>{name} ({symbol})</a>"
 
             emoji = ""
             if growth != "N/A":
