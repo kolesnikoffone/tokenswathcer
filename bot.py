@@ -18,18 +18,21 @@ logger = logging.getLogger(__name__)
 
 REFERRAL_PREFIX = "prghZZEt-"
 
-
 def address_to_base64url(address: str) -> str:
     address = address.strip()
     if ':' in address:
         wc, hex_addr = address.split(':')
-        wc_byte = int(wc).to_bytes(1, 'big', signed=True)
+        wc = int(wc)
+        hex_addr = bytes.fromhex(hex_addr)
+        full_addr = bytes([wc & 0xff]) + hex_addr
     else:
-        wc_byte = (0).to_bytes(1, 'big', signed=True)
-        hex_addr = address
-    address_bytes = bytes.fromhex(hex_addr)
-    full_address = wc_byte + address_bytes
-    return base64.urlsafe_b64encode(full_address).rstrip(b'=').decode('utf-8')
+        full_addr = bytes.fromhex(address)
+    # Add CRC16 checksum as required for TON URLs
+    import crcmod
+    crc16 = crcmod.predefined.mkPredefinedCrcFun('crc-ccitt-false')
+    checksum = crc16(full_addr).to_bytes(2, 'big')
+    full_with_crc = full_addr + checksum
+    return base64.urlsafe_b64encode(full_with_crc).rstrip(b'=').decode('utf-8')
 
 
 async def get_ton_price():
