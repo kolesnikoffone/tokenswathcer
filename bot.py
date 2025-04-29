@@ -20,7 +20,7 @@ REFERRAL_PREFIX = "prghZZEt-"
 
 last_valid_tokens = "Нет подходящих токенов"
 
-def address_to_base64url(address: str) -> str:
+def address_to_user_friendly(address: str) -> str:
     def crc16(data: bytes) -> bytes:
         crc = 0xFFFF
         for b in data:
@@ -33,21 +33,14 @@ def address_to_base64url(address: str) -> str:
                 crc &= 0xFFFF
         return crc.to_bytes(2, 'big')
 
-    address = address.strip()
-    if ':' not in address:
-        raise ValueError("Некорректный адрес: отсутствует ':'")
-
     wc_str, hex_part = address.split(':')
     wc = int(wc_str)
     addr_bytes = bytes.fromhex(hex_part)
-
     tag = b'\x11'
     wc_byte = wc.to_bytes(1, 'big', signed=True)
-    full = tag + wc_byte + addr_bytes
-    checksum = crc16(full)
-    full_with_crc = full + checksum
-
-    return base64.urlsafe_b64encode(full_with_crc).decode().rstrip('=')
+    body = tag + wc_byte + addr_bytes
+    checksum = crc16(body)
+    return base64.urlsafe_b64encode(body + checksum).decode().rstrip('=')
 
 async def get_ton_price():
     url = 'https://api.coingecko.com/api/v3/simple/price?ids=the-open-network&vs_currencies=usd'
@@ -106,7 +99,7 @@ async def get_tokens():
                             continue
 
                         try:
-                            encoded_address = address_to_base64url(address)
+                            encoded_address = address_to_user_friendly(address)
                             link = f"https://t.me/tontrade?start={REFERRAL_PREFIX}{encoded_address}"
                             name_symbol = f'<a href="{link}">{name} ({symbol})</a>'
                         except Exception as e:
