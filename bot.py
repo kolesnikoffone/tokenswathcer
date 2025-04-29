@@ -6,14 +6,12 @@ import crcmod
 import asyncio
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.constants import ParseMode
-from telegram.ext import ApplicationBuilder, CommandHandler, CallbackQueryHandler, ContextTypes
+from telegram.ext import ApplicationBuilder, CommandHandler, CallbackQueryHandler, ContextTypes, Application
 
-# Получаем токен из переменных окружения
 BOT_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN")
 if not BOT_TOKEN:
     raise ValueError("Переменная окружения TELEGRAM_BOT_TOKEN не установлена")
 
-# Настройка логгирования
 logging.basicConfig(
     format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
     level=logging.INFO
@@ -21,7 +19,7 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 REFERRAL_PREFIX = "prghZZEt-"
-last_chat_id = None  # Для автообновления
+chat_id_for_auto_update = None
 
 def address_to_base64url(address: str) -> str:
     address = address.strip()
@@ -33,7 +31,7 @@ def address_to_base64url(address: str) -> str:
         wc = 0
         hex_addr = bytes.fromhex(address)
 
-    tag = 0x11  # bounceable = 1, testnet = 0
+    tag = 0x11
     workchain_byte = wc.to_bytes(1, byteorder="big", signed=True)
     data = bytes([tag]) + workchain_byte + hex_addr
 
@@ -42,7 +40,6 @@ def address_to_base64url(address: str) -> str:
 
     full_data = data + checksum
     return base64.urlsafe_b64encode(full_data).rstrip(b'=').decode()
-
 
 async def get_ton_price():
     url = 'https://api.coingecko.com/api/v3/simple/price?ids=the-open-network&vs_currencies=usd'
@@ -56,25 +53,12 @@ async def get_ton_price():
         logger.warning(f"Не удалось получить цену TON: {e}")
     return 0
 
-
 async def get_tokens():
     url = 'https://prod-api.bigpump.app/api/v1/coins?sortType=pocketfi&limit=30'
     headers = {
         'accept': '*/*',
         'accept-language': 'en-US,en;q=0.9,ru-RU;q=0.8,ru;q=0.7,tr-TR;q=0.6,tr;q=0.5',
-        'authorization': 'Bearer eyJhbGciOiJIUzI1NiJ9.eyJhZGRyZXNzIjoiMDpmNWI5...Po',
-        'origin': 'https://bigpump.app',
-        'priority': 'u=1, i',
-        'referer': 'https://bigpump.app/',
-        'sec-ch-ua': '"Google Chrome";v="135", "Not-A.Brand";v="8", "Chromium";v="135"',
-        'sec-ch-ua-mobile': '?0',
-        'sec-ch-ua-platform': '"macOS"',
-        'sec-fetch-dest': 'empty',
-        'sec-fetch-mode': 'cors',
-        'sec-fetch-site': 'same-site',
-        'telegramrawdata': 'query_id=AAEaYrUMAAAAABpitQwu6gcp&user=...&hash=...',
-        'user-agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/...'
-    }
+        'authorization': 'Bearer eyJhbGciOiJIUzI1NiJ9.eyJhZGRyZXNzIjoiMDpmNWI5...'}  # Тут подставь свой токен правильно, укорочен
     try:
         async with aiohttp.ClientSession() as session:
             async with session.get(url, headers=headers) as response:
@@ -123,9 +107,9 @@ async def get_tokens():
                             elif growth >= 5:
                                 emoji = "🙃"
                             elif growth > 0:
-                                emoji = "🥹"
+                                emoji = "🫩"
                             elif growth > -10:
-                                emoji = "🥲"
+                                emoji = "🫢"
                             elif growth > -25:
                                 emoji = "😭"
                             else:
@@ -144,17 +128,15 @@ async def get_tokens():
         logger.exception("Ошибка при обращении к BigPump API")
         return [f"Ошибка при запросе: {str(e)}"]
 
-
 async def tokens_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    global last_chat_id
-    last_chat_id = update.effective_chat.id
+    global chat_id_for_auto_update
+    chat_id_for_auto_update = update.effective_chat.id
     await update.message.reply_text("Получаю токены с BigPump...")
     tokens = await get_tokens()
     keyboard = [[InlineKeyboardButton("🔄 Обновить", callback_data='refresh')]]
     reply_markup = InlineKeyboardMarkup(keyboard)
     for t in tokens:
-        await update.message.reply_text(t, parse_mode=ParseMode.HTML, disable_web_page_preview=True, reply_markup=reply_markup)
-
+        await update.message.reply_text(t, parse_mode=ParseMode.HTML, reply_markup=reply_markup, disable_web_page_preview=True)
 
 async def refresh_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
@@ -163,20 +145,23 @@ async def refresh_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if tokens:
         await query.edit_message_text(tokens[0], parse_mode=ParseMode.HTML, disable_web_page_preview=True, reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("🔄 Обновить", callback_data='refresh')]]))
 
-
-async def auto_update(app):
+async def auto_update(app: Application):
+    global chat_id_for_auto_update
     while True:
-        await asyncio.sleep(3600)  # 1 час
-        if last_chat_id:
+        if chat_id_for_auto_update:
             tokens = await get_tokens()
-            for t in tokens:
-                await app.bot.send_message(chat_id=last_chat_id, text=t, parse_mode=ParseMode.HTML, disable_web_page_preview=True)
+            if tokens:
+                await app.bot.send_message(chat_id=chat_id_for_auto_update, text=tokens[0], parse_mode=ParseMode.HTML, disable_web_page_preview=True, reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("🔄 Обновить", callback_data='refresh')]]))
+        await asyncio.sleep(3600)
 
+async def on_startup(app: Application):
+    app.create_task(auto_update(app))
 
 if __name__ == '__main__':
-    app = ApplicationBuilder().token(BOT_TOKEN).build()
+    app = ApplicationBuilder().token(BOT_TOKEN).post_init(on_startup).build()
+
     app.add_handler(CommandHandler("tokens", tokens_command))
-    app.add_handler(CallbackQueryHandler(refresh_callback, pattern='refresh'))
+    app.add_handler(CallbackQueryHandler(refresh_callback, pattern="refresh"))
+
     print("Бот запущен...")
-    asyncio.create_task(auto_update(app))
     app.run_polling()
