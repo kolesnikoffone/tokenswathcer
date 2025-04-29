@@ -1,17 +1,15 @@
 import logging
 import os
 import aiohttp
+from tonsdk.utils import Address
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.constants import ParseMode
-from telegram.ext import ApplicationBuilder, CommandHandler, CallbackQueryHandler, ContextTypes
-from ton.utils import address as ton_address
+from telegram.ext import ApplicationBuilder, CommandHandler, ContextTypes, CallbackQueryHandler
 
-# Получаем токен из переменных окружения
 BOT_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN")
 if not BOT_TOKEN:
     raise ValueError("Переменная окружения TELEGRAM_BOT_TOKEN не установлена")
 
-# Настройка логгирования
 logging.basicConfig(
     format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
     level=logging.INFO
@@ -19,15 +17,17 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 REFERRAL_PREFIX = "prghZZEt-"
+latest_tokens_cache = None
 
-def address_to_base64url(raw: str) -> str:
+def address_to_base64url(address: str) -> str:
     try:
-        return ton_address.to_userfriendly(raw, bounceable=True, testnet=False, urlsafe=True)
+        wc, hex_addr = address.strip().split(":")
+        wc = int(wc)
+        addr = Address(wc=wc, address=bytes.fromhex(hex_addr))
+        return addr.to_string(bounceable=True, url_safe=True)
     except Exception as e:
-        logger.warning(f"Ошибка при кодировании адреса {raw}: {e}")
-        return None
-
-cached_result = None
+        logger.warning(f"Ошибка при кодировании адреса {address}: {e}")
+        return ""
 
 async def get_ton_price():
     url = 'https://api.coingecko.com/api/v3/simple/price?ids=the-open-network&vs_currencies=usd'
@@ -42,12 +42,11 @@ async def get_ton_price():
     return 0
 
 async def get_tokens():
-    global cached_result
     url = 'https://prod-api.bigpump.app/api/v1/coins?sortType=pocketfi&limit=30'
     headers = {
         'accept': '*/*',
         'accept-language': 'en-US,en;q=0.9,ru-RU;q=0.8,ru;q=0.7',
-        'authorization': 'Bearer eyJhbGciOiJIUzI1NiJ9.eyJhZGRyZXNzIjoiMDpmNWI5MWRkZDBiOWM4N2VmNjUwMTFhNzlmMWRhNzE5NzIwYzVhODgwN2I1NGMxYTQwNTIyNzRmYTllMzc5YmNkIiwibmV0d29yayI6Ii0yMzkiLCJpYXQiOjE3NDI4MDY4NTMsImV4cCI6MTc3NDM2NDQ1M30.U_GaaX5psI572w4YmwAjlh8u4uFBVHdsD-zJacvWiPo',
+        'authorization': 'Bearer eyJhbGciOiJIUzI1NiJ9.eyJhZGRyZXNzIjoiMDpmNWI5...snip...wiPo',
         'origin': 'https://bigpump.app',
         'referer': 'https://bigpump.app/',
         'user-agent': 'Mozilla/5.0'
@@ -74,20 +73,17 @@ async def get_tokens():
                     for idx, (token, cap) in enumerate(filtered[:15], 1):
                         name = token.get('name', 'N/A')
                         symbol = token.get('symbol', 'N/A')
-                        address_raw = token.get('address')
+                        address = token.get('address')
                         change = token.get('priceChange1H')
 
                         mcap = f"<b>${cap/1000:.1f}K</b>" if cap >= 1_000 else f"<b>${cap:.2f}</b>"
 
-                        if address_raw:
-                            encoded = address_to_base64url(address_raw)
-                            if encoded:
-                                link = f"https://t.me/tontrade?start={REFERRAL_PREFIX}{encoded}"
+                        name_symbol = f'{name} ({symbol})'
+                        if address:
+                            encoded_address = address_to_base64url(address)
+                            if encoded_address:
+                                link = f"https://t.me/tontrade?start={REFERRAL_PREFIX}{encoded_address}"
                                 name_symbol = f'<a href="{link}">{name} ({symbol})</a>'
-                            else:
-                                name_symbol = f'{name} ({symbol})'
-                        else:
-                            name_symbol = f'{name} ({symbol})'
 
                         emoji = ""
                         try:
@@ -101,7 +97,7 @@ async def get_tokens():
                             elif growth >= 10:
                                 emoji = "💪"
                             elif growth >= 5:
-                                emoji = "🙃"
+                                emoji = "🤭"
                             elif growth > 0:
                                 emoji = "🥹"
                             elif growth > -10:
@@ -117,29 +113,36 @@ async def get_tokens():
                         line = f"{idx}. {name_symbol} | {mcap} | {growth_str}"
                         result.append(line)
 
-                    cached_result = "\n\n".join(result)
-                    return cached_result
+                    return ["\n\n".join(result)] if result else ["Нет подходящих токенов"]
                 else:
-                    return "Ошибка получения данных"
+                    return [f"Ошибка {response.status}"]
     except Exception as e:
         logger.exception("Ошибка при обращении к BigPump API")
-        return "Ошибка при запросе"
+        return [f"Ошибка при запросе: {str(e)}"]
 
 async def listings_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    message_text = cached_result or await get_tokens()
-    keyboard = InlineKeyboardMarkup([[InlineKeyboardButton("🔄 Обновить", callback_data="refresh")]])
-    await update.message.reply_text(message_text, parse_mode=ParseMode.HTML, disable_web_page_preview=True, reply_markup=keyboard)
+    global latest_tokens_cache
+    tokens = await get_tokens()
+    latest_tokens_cache = tokens
+    keyboard = InlineKeyboardMarkup([
+        [InlineKeyboardButton("Обновить", callback_data="refresh")]
+    ])
+    await update.message.reply_text(tokens[0], parse_mode=ParseMode.HTML, disable_web_page_preview=True, reply_markup=keyboard)
 
 async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    global latest_tokens_cache
     query = update.callback_query
     await query.answer()
-    new_data = await get_tokens()
-    if new_data != query.message.text_html:
-        await query.edit_message_text(new_data, parse_mode=ParseMode.HTML, disable_web_page_preview=True, reply_markup=query.message.reply_markup)
+    tokens = await get_tokens()
+    if tokens[0] != latest_tokens_cache[0]:
+        latest_tokens_cache = tokens
+        await query.edit_message_text(tokens[0], parse_mode=ParseMode.HTML, disable_web_page_preview=True, reply_markup=InlineKeyboardMarkup([
+            [InlineKeyboardButton("Обновить", callback_data="refresh")]
+        ]))
 
 if __name__ == '__main__':
     app = ApplicationBuilder().token(BOT_TOKEN).build()
     app.add_handler(CommandHandler("listings", listings_command))
-    app.add_handler(CallbackQueryHandler(button_handler))
+    app.add_handler(CallbackQueryHandler(button_handler, pattern="refresh"))
     print("Бот запущен...")
     app.run_polling()
