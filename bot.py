@@ -25,7 +25,7 @@ def address_to_base64url(address: str) -> str:
     wc, hex_part = address.split(":")
     wc = int(wc)
     addr_bytes = bytes.fromhex(hex_part)
-    tag = 0x51  # bounceable, not testnet
+    tag = 0x11  # Corrected: bounceable, non-testnet
     full = bytes([tag]) + struct.pack("b", wc) + addr_bytes
     crc16 = crcmod.predefined.mkPredefinedCrcFun('crc-ccitt-false')
     checksum = crc16(full).to_bytes(2, 'big')
