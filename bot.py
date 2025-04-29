@@ -40,7 +40,9 @@ def address_to_base64url(address: str, bounceable: bool = True, testnet: bool = 
     checksum = crc16(data).to_bytes(2, 'big')
 
     full_data = data + checksum
-    return base64.urlsafe_b64encode(full_data).rstrip(b'=').decode()
+
+    encoded = base64.urlsafe_b64encode(full_data).decode()
+    return encoded.rstrip('=')
 
 async def get_ton_price():
     url = 'https://api.coingecko.com/api/v3/simple/price?ids=the-open-network&vs_currencies=usd'
