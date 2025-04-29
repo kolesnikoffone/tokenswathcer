@@ -23,14 +23,13 @@ def address_to_base64url(address: str) -> str:
     address = address.strip()
     if ':' in address:
         wc, hex_addr = address.split(':')
-        wc_byte = b'\x00' if wc == '0' else b'\xff'
+        wc_byte = int(wc).to_bytes(1, 'big', signed=True)
     else:
-        wc_byte = b'\x00'
+        wc_byte = (0).to_bytes(1, 'big', signed=True)
         hex_addr = address
     address_bytes = bytes.fromhex(hex_addr)
     full_address = wc_byte + address_bytes
-    b64url_address = base64.urlsafe_b64encode(full_address).rstrip(b'=').decode('utf-8')
-    return b64url_address
+    return base64.urlsafe_b64encode(full_address).rstrip(b'=').decode('utf-8')
 
 
 async def get_ton_price():
