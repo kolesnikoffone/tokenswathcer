@@ -1,6 +1,6 @@
 import logging
 import os
-import requests
+import aiohttp
 from telegram import Update
 from telegram.ext import ApplicationBuilder, CommandHandler, ContextTypes
 
@@ -24,20 +24,21 @@ async def get_tokens():
         'origin': 'https://bigpump.app',
         'referer': 'https://bigpump.app/',
     }
-    response = requests.get(url, headers=headers)
-    if response.status_code == 200:
-        data = response.json()
-        tokens = data.get('data', [])
-        result = []
-        for token in tokens:
-            name = token.get('name')
-            symbol = token.get('symbol')
-            address = token.get('address')
-            chain = token.get('chain')
-            result.append(f"{name} ({symbol})\nChain: {chain}\nAddress: {address}\n")
-        return result
-    else:
-        return ["Ошибка при запросе к BigPump"]
+    async with aiohttp.ClientSession() as session:
+        async with session.get(url, headers=headers) as response:
+            if response.status == 200:
+                data = await response.json()
+                tokens = data.get('data', [])
+                result = []
+                for token in tokens:
+                    name = token.get('name')
+                    symbol = token.get('symbol')
+                    address = token.get('address')
+                    chain = token.get('chain')
+                    result.append(f"{name} ({symbol})\nChain: {chain}\nAddress: {address}\n")
+                return result
+            else:
+                return ["Ошибка при запросе к BigPump"]
 
 # Обработчик команды /tokens
 async def tokens_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
