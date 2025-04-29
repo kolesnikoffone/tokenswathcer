@@ -17,6 +17,23 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
+# Функция запроса цены TON
+async def get_ton_price():
+    url = 'https://prod-api.bigpump.app/api/v1/transactions/ton_price'
+    headers = {
+        'authorization': 'Bearer eyJhbGciOiJIUzI1NiJ9.eyJhZGRyZXNzIjoiMDpmNWI5MWRkZDBiOWM4N2VmNjUwMTFhNzlmMWRhNzE5NzIwYzVhODgwN2I1NGMxYTQwNTIyNzRmYTllMzc5YmNkIiwibmV0d29yayI6Ii0yMzkiLCJpYXQiOjE3NDI4MDY4NTMsImV4cCI6MTc3NDM2NDQ1M30.U_GaaX5psI572w4YmwAjlh8u4uFBVHdsD-zJacvWiPo',
+        'accept': '*/*',
+    }
+    try:
+        async with aiohttp.ClientSession() as session:
+            async with session.get(url, headers=headers) as response:
+                if response.status == 200:
+                    data = await response.json()
+                    return float(data.get("ton_price", 0))
+    except Exception as e:
+        logger.warning(f"Не удалось получить цену TON: {e}")
+    return 0
+
 # Функция запроса данных с BigPump
 async def get_tokens():
     url = 'https://prod-api.bigpump.app/api/v1/coins?sortType=pocketfi&limit=10'
@@ -35,16 +52,15 @@ async def get_tokens():
                 if response.status == 200:
                     data = await response.json()
                     tokens = data.get('coins', [])
+                    ton_usd_price = await get_ton_price()
                     result = []
                     for token in tokens:
                         name = token.get('name')
                         symbol = token.get('symbol')
 
-                        # Вычисление капы по формуле: liqCurrentUsdPrice * tonLiqCollected / 1e9
                         try:
-                            ton_price = float(token.get('liqCurrentUsdPrice') or 0)
                             ton_collected = float(token.get('tonLiqCollected') or 0)
-                            cap = ton_price * ton_collected / 1e9
+                            cap = ton_collected * ton_usd_price / 1e9
                         except:
                             cap = 0
 
