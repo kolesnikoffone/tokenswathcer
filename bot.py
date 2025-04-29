@@ -2,9 +2,9 @@ import logging
 import os
 import aiohttp
 import base64
-from telegram import Update
+from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.constants import ParseMode
-from telegram.ext import ApplicationBuilder, CommandHandler, ContextTypes
+from telegram.ext import ApplicationBuilder, CommandHandler, CallbackQueryHandler, ContextTypes
 
 BOT_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN")
 if not BOT_TOKEN:
@@ -18,17 +18,19 @@ logger = logging.getLogger(__name__)
 
 REFERRAL_PREFIX = "prghZZEt-"
 
+
 def address_to_base64url(address: str) -> str:
     address = address.strip()
     if ':' in address:
         wc, hex_addr = address.split(':')
-        wc = int(wc)
-        hex_addr = bytes.fromhex(hex_addr)
-        full_addr = bytes([wc]) + hex_addr
+        wc_byte = b'\x00' if wc == '0' else b'\xff'
     else:
-        full_addr = bytes.fromhex(address)
-    b64 = base64.urlsafe_b64encode(full_addr).rstrip(b'=').decode('utf-8')
-    return b64
+        wc_byte = b'\x00'
+        hex_addr = address
+    address_bytes = bytes.fromhex(hex_addr)
+    full_address = wc_byte + address_bytes
+    b64url_address = base64.urlsafe_b64encode(full_address).rstrip(b'=').decode('utf-8')
+    return b64url_address
 
 
 async def get_ton_price():
@@ -125,12 +127,23 @@ async def get_tokens():
 async def tokens_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text("Получаю токены с BigPump...")
     tokens = await get_tokens()
+    keyboard = [[InlineKeyboardButton("🔄 Обновить", callback_data='refresh')]]
+    reply_markup = InlineKeyboardMarkup(keyboard)
     for t in tokens:
-        await update.message.reply_text(t, parse_mode=ParseMode.HTML, disable_web_page_preview=True)
+        await update.message.reply_text(t, parse_mode=ParseMode.HTML, reply_markup=reply_markup, disable_web_page_preview=True)
+
+
+async def refresh_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    query = update.callback_query
+    await query.answer()
+    tokens = await get_tokens()
+    if tokens:
+        await query.edit_message_text(tokens[0], parse_mode=ParseMode.HTML, disable_web_page_preview=True, reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("🔄 Обновить", callback_data='refresh')]]))
 
 
 if __name__ == '__main__':
     app = ApplicationBuilder().token(BOT_TOKEN).build()
     app.add_handler(CommandHandler("tokens", tokens_command))
+    app.add_handler(CallbackQueryHandler(refresh_callback, pattern='refresh'))
     print("Бот запущен...")
     app.run_polling()
