@@ -1,62 +1,56 @@
-import os
-import asyncio
 import logging
-import nest_asyncio
-from telegram import Bot, Update
-from telegram.ext import Application, CommandHandler, ContextTypes
-import httpx
+import os
+import requests
+from telegram import Update
+from telegram.ext import ApplicationBuilder, CommandHandler, ContextTypes
 
-logging.basicConfig(level=logging.INFO)
-logger = logging.getLogger(__name__)
-
-BOT_TOKEN = os.getenv("BOT_TOKEN")
+# Получаем токен из переменных окружения
+BOT_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN")
 if not BOT_TOKEN:
-    raise EnvironmentError("BOT_TOKEN not set in environment.")
+    raise ValueError("Переменная окружения TELEGRAM_BOT_TOKEN не установлена")
 
-API_URL = "https://prod-api.bigpump.app/api/v1/coins?sortType=new&limit=20"
+# Настройка логгирования
+logging.basicConfig(
+    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
+    level=logging.INFO
+)
 
-async def fetch_new_listings():
-    async with httpx.AsyncClient() as client:
-        try:
-            response = await client.get(API_URL, headers={
-                "accept": "*/*",
-                "origin": "https://bigpump.app",
-                "referer": "https://bigpump.app/"
-            })
-            response.raise_for_status()
-            return response.json().get("data", [])
-        except Exception as e:
-            logger.error(f"Ошибка запроса к BigPump API: {e}")
-            return []
-
-async def update_listings(chat_id=None, bot=None):
-    listings = await fetch_new_listings()
-    if not listings:
-        message = "Нет новых листингов с BigPump."
+# Функция запроса данных с BigPump
+async def get_tokens():
+    url = 'https://prod-api.bigpump.app/api/v1/coins?sortType=pocketfi&limit=10'
+    headers = {
+        'authorization': 'Bearer eyJhbGciOiJIUzI1NiJ9.eyJhZGRyZXNzIjoiMDpmNWI5MWRkZDBiOWM4N2VmNjUwMTFhNzlmMWRhNzE5NzIwYzVhODgwN2I1NGMxYTQwNTIyNzRmYTllMzc5YmNkIiwibmV0d29yayI6Ii0yMzkiLCJpYXQiOjE3NDI4MDY4NTMsImV4cCI6MTc3NDM2NDQ1M30.U_GaaX5psI572w4YmwAjlh8u4uFBVHdsD-zJacvWiPo',
+        'accept': '*/*',
+        'origin': 'https://bigpump.app',
+        'referer': 'https://bigpump.app/',
+    }
+    response = requests.get(url, headers=headers)
+    if response.status_code == 200:
+        data = response.json()
+        tokens = data.get('data', [])
+        result = []
+        for token in tokens:
+            name = token.get('name')
+            symbol = token.get('symbol')
+            address = token.get('address')
+            chain = token.get('chain')
+            result.append(f"{name} ({symbol})\nChain: {chain}\nAddress: {address}\n")
+        return result
     else:
-        message = "🆕 *Новые токены BigPump:*\n"
-        for i, token in enumerate(listings[:10], 1):
-            name = token.get("name", "Без названия")
-            symbol = token.get("symbol", "-")
-            address = token.get("address")
-            tv_url = f"https://tonviewer.com/{address}"
-            message += f"{i}. {name} ({symbol}) — [TonViewer]({tv_url})\n"
+        return ["Ошибка при запросе к BigPump"]
 
-    if bot and chat_id:
-        await bot.send_message(chat_id=chat_id, text=message, parse_mode="Markdown")
+# Обработчик команды /tokens
+async def tokens_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    await update.message.reply_text("Получаю токены с BigPump...")
+    tokens = await get_tokens()
+    for t in tokens:
+        await update.message.reply_text(t)
 
-async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    await update_listings(chat_id=update.effective_chat.id, bot=context.bot)
+# Основной запуск бота
+if __name__ == '__main__':
+    app = ApplicationBuilder().token(BOT_TOKEN).build()
 
-async def main():
-    application = Application.builder().token(BOT_TOKEN).build()
-    application.add_handler(CommandHandler("start", start))
+    app.add_handler(CommandHandler("tokens", tokens_command))
 
-    await application.initialize()
-    await application.start()
-    await application.bot.set_my_commands([("start", "Получить новые листинги BigPump")])
-    await application.run_polling()
-
-if __name__ == "__main__":
-    nest_asyncio.apply()
-    asyncio.get_event_loop().run_until_complete(main())
+    print("Бот запущен...")
+    app.run_polling()
