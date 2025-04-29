@@ -9,7 +9,8 @@ from aiogram.filters import CommandStart, Command
 from aiogram import F
 
 API_TOKEN = os.getenv('API_TOKEN')
-BIGPUMP_API_URL = 'https://prod-api.bigpump.app/api/v1/coins/list?limit=100&sort=liq_mcap&order=desc'
+BIGPUMP_API_URL = 'https://prod-api.bigpump.app/api/v1/coins/list?limit=150&sort=liq_mcap&order=desc'
+BIGPUMP_API_TOKEN = os.getenv('BIGPUMP_API_TOKEN')
 TON_API_URL = 'https://api.ton.sh/rates'
 REFERRAL_PREFIX = 'prghZZEt-'
 
@@ -32,8 +33,14 @@ def address_to_base64url(address: str) -> str:
     return b64
 
 async def fetch_bigpump_data():
+    headers = {
+        'Authorization': f'Bearer {BIGPUMP_API_TOKEN}',
+        'Origin': 'https://bigpump.app',
+        'Referer': 'https://bigpump.app/',
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/112.0.0.0 Safari/537.36'
+    }
     async with httpx.AsyncClient() as client:
-        response = await client.get(BIGPUMP_API_URL)
+        response = await client.get(BIGPUMP_API_URL, headers=headers)
         response.raise_for_status()
         return response.json()
 
