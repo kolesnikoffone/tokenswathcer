@@ -11,7 +11,7 @@ BOT_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN")
 if not BOT_TOKEN:
     raise ValueError("Переменная окружения TELEGRAM_BOT_TOKEN не установлена")
 
-BIGPUMP_API_URL = 'https://prod-api.bigpump.app/api/v1/coins/list?limit=150&sort=liq_mcap&order=desc'
+BIGPUMP_API_URL = 'https://prod-api.bigpump.app/api/v1/coins?sortType=pocketfi&limit=30'
 TON_API_URL = 'https://api.ton.sh/rates'
 REFERRAL_PREFIX = 'prghZZEt-'
 
