@@ -1,4 +1,4 @@
-import logging
+""import logging
 import os
 import aiohttp
 from telegram import Update
@@ -19,17 +19,13 @@ logger = logging.getLogger(__name__)
 
 # Функция запроса цены TON
 async def get_ton_price():
-    url = 'https://prod-api.bigpump.app/api/v1/transactions/ton_price'
-    headers = {
-        'authorization': 'Bearer eyJhbGciOiJIUzI1NiJ9.eyJhZGRyZXNzIjoiMDpmNWI5MWRkZDBiOWM4N2VmNjUwMTFhNzlmMWRhNzE5NzIwYzVhODgwN2I1NGMxYTQwNTIyNzRmYTllMzc5YmNkIiwibmV0d29yayI6Ii0yMzkiLCJpYXQiOjE3NDI4MDY4NTMsImV4cCI6MTc3NDM2NDQ1M30.U_GaaX5psI572w4YmwAjlh8u4uFBVHdsD-zJacvWiPo',
-        'accept': '*/*',
-    }
+    url = 'https://api.tonapi.io/v1/rates'
     try:
         async with aiohttp.ClientSession() as session:
-            async with session.get(url, headers=headers) as response:
+            async with session.get(url) as response:
                 if response.status == 200:
                     data = await response.json()
-                    return float(data.get("ton_price", 0))
+                    return float(data["rates"]["TON"]["prices"]["USD"])
     except Exception as e:
         logger.warning(f"Не удалось получить цену TON: {e}")
     return 0
