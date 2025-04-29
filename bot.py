@@ -1,20 +1,34 @@
 import asyncio
 import logging
 import httpx
+import base64
 from aiogram import Bot, Dispatcher, types
 from aiogram.types import InlineKeyboardButton, InlineKeyboardMarkup
 from aiogram.filters import CommandStart, Command
 from aiogram import F
 
 API_TOKEN = 'YOUR_TELEGRAM_BOT_TOKEN'
-BIGPUMP_API_URL = 'https://prod-api.bigpump.app/api/v1/coins/list?limit=50&sort=liq_mcap&order=desc'
+BIGPUMP_API_URL = 'https://prod-api.bigpump.app/api/v1/coins/list?limit=100&sort=liq_mcap&order=desc'
 TON_API_URL = 'https://api.ton.sh/rates'
+REFERRAL_PREFIX = 'prghZZEt-'
 
 bot = Bot(token=API_TOKEN)
 dp = Dispatcher()
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
+
+def address_to_base64url(address: str) -> str:
+    address = address.strip()
+    if ':' in address:
+        wc, hex_addr = address.split(':')
+        wc = int(wc)
+        hex_addr = bytes.fromhex(hex_addr)
+        full_addr = bytes([wc]) + hex_addr
+    else:
+        full_addr = bytes.fromhex(address)
+    b64 = base64.urlsafe_b64encode(full_addr).rstrip(b'=').decode('utf-8')
+    return b64
 
 async def fetch_bigpump_data():
     async with httpx.AsyncClient() as client:
@@ -61,6 +75,7 @@ async def send_tokens(chat_id, message_id=None):
             symbol = token.get("symbol", "N/A")
             mcap_value = token.get("marketCap")
             growth = token.get("priceChange1H", "N/A")
+            address = token.get("address", None)
 
             if mcap_value:
                 mcap = float(mcap_value) / 10**9 * ton_price
@@ -68,7 +83,14 @@ async def send_tokens(chat_id, message_id=None):
             else:
                 mcap_str = "N/A"
 
-            line = f"{idx}. {name} ({symbol}) | {mcap_str} | {growth}%\n{chr(8212) * 35}"
+            if address:
+                encoded_address = address_to_base64url(address)
+                token_link = f"https://t.me/tontrade?start={REFERRAL_PREFIX}{encoded_address}"
+                clickable_name = f'<a href="{token_link}">{name} ({symbol})</a>'
+            else:
+                clickable_name = f'{name} ({symbol})'
+
+            line = f"{idx}. {clickable_name} | {mcap_str} | {growth}%\n{chr(8212) * 35}"
             result.append(line)
 
         if result and result[-1].endswith(chr(8212) * 35):
@@ -83,9 +105,9 @@ async def send_tokens(chat_id, message_id=None):
         )
 
         if message_id:
-            await bot.edit_message_text(chat_id=chat_id, message_id=message_id, text=final_text, reply_markup=markup, parse_mode='HTML')
+            await bot.edit_message_text(chat_id=chat_id, message_id=message_id, text=final_text, reply_markup=markup, parse_mode='HTML', disable_web_page_preview=True)
         else:
-            await bot.send_message(chat_id=chat_id, text=final_text, reply_markup=markup, parse_mode='HTML')
+            await bot.send_message(chat_id=chat_id, text=final_text, reply_markup=markup, parse_mode='HTML', disable_web_page_preview=True)
 
     except Exception as e:
         logger.error(f"Ошибка при получении токенов: {e}")
