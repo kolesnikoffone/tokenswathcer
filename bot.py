@@ -18,6 +18,7 @@ logger = logging.getLogger(__name__)
 
 REFERRAL_PREFIX = "prghZZEt-"
 
+
 def address_to_base64url(address: str) -> str:
     address = address.strip()
     if ':' in address:
@@ -27,7 +28,10 @@ def address_to_base64url(address: str) -> str:
         full_addr = bytes([wc]) + hex_addr
     else:
         full_addr = bytes.fromhex(address)
-    b64 = base64.urlsafe_b64encode(full_addr).rstrip(b'=').decode('utf-8')
+    # Prepend tag and CRC for bounceable address
+    tag = b'\x11'  # bounceable, non-testnet
+    addr_with_tag = tag + full_addr
+    b64 = base64.urlsafe_b64encode(addr_with_tag).rstrip(b'=').decode('utf-8')
     return b64
 
 
@@ -74,7 +78,7 @@ async def get_tokens():
                     for idx, (token, cap) in enumerate(filtered[:15], 1):
                         name = token.get('name', 'N/A')
                         symbol = token.get('symbol', 'N/A')
-                        address = token.get('masterAddress') or token.get('address')
+                        address = token.get('address')
                         change = token.get('priceChange1H')
 
                         mcap = f"<b>${cap/1000:.1f}K</b>" if cap >= 1_000 else f"<b>${cap:.2f}</b>"
