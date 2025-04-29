@@ -3,10 +3,9 @@ import os
 import aiohttp
 import base64
 import crcmod
-import asyncio
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.constants import ParseMode
-from telegram.ext import ApplicationBuilder, CommandHandler, CallbackQueryHandler, ContextTypes, Application
+from telegram.ext import ApplicationBuilder, CommandHandler, ContextTypes, CallbackQueryHandler
 
 BOT_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN")
 if not BOT_TOKEN:
@@ -19,7 +18,6 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 REFERRAL_PREFIX = "prghZZEt-"
-chat_id_for_auto_update = None
 
 def address_to_base64url(address: str) -> str:
     address = address.strip()
@@ -57,8 +55,12 @@ async def get_tokens():
     url = 'https://prod-api.bigpump.app/api/v1/coins?sortType=pocketfi&limit=30'
     headers = {
         'accept': '*/*',
-        'accept-language': 'en-US,en;q=0.9,ru-RU;q=0.8,ru;q=0.7,tr-TR;q=0.6,tr;q=0.5',
-        'authorization': 'Bearer eyJhbGciOiJIUzI1NiJ9.eyJhZGRyZXNzIjoiMDpmNWI5...'}  # Тут подставь свой токен правильно, укорочен
+        'accept-language': 'en-US,en;q=0.9,ru-RU;q=0.8,ru;q=0.7',
+        'authorization': 'Bearer eyJhbGciOiJIUzI1NiJ9.eyJhZGRyZXNzIjoiMDpmNWI5MWRkZDBiOWM4N2VmNjUwMTFhNzlmMWRhNzE5NzIwYzVhODgwN2I1NGMxYTQwNTIyNzRmYTllMzc5YmNkIiwibmV0d29yayI6Ii0yMzkiLCJpYXQiOjE3NDI4MDY4NTMsImV4cCI6MTc3NDM2NDQ1M30.U_GaaX5psI572w4YmwAjlh8u4uFBVHdsD-zJacvWiPo',
+        'origin': 'https://bigpump.app',
+        'referer': 'https://bigpump.app/',
+        'user-agent': 'Mozilla/5.0'
+    }
     try:
         async with aiohttp.ClientSession() as session:
             async with session.get(url, headers=headers) as response:
@@ -107,9 +109,9 @@ async def get_tokens():
                             elif growth >= 5:
                                 emoji = "🙃"
                             elif growth > 0:
-                                emoji = "🫩"
+                                emoji = "🥹"
                             elif growth > -10:
-                                emoji = "🫢"
+                                emoji = "🥲"
                             elif growth > -25:
                                 emoji = "😭"
                             else:
@@ -129,39 +131,36 @@ async def get_tokens():
         return [f"Ошибка при запросе: {str(e)}"]
 
 async def tokens_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    global chat_id_for_auto_update
-    chat_id_for_auto_update = update.effective_chat.id
     await update.message.reply_text("Получаю токены с BigPump...")
     tokens = await get_tokens()
-    keyboard = [[InlineKeyboardButton("🔄 Обновить", callback_data='refresh')]]
-    reply_markup = InlineKeyboardMarkup(keyboard)
+
+    keyboard = InlineKeyboardMarkup([
+        [InlineKeyboardButton("🔁 Обновить", callback_data="refresh_tokens")]
+    ])
+
     for t in tokens:
-        await update.message.reply_text(t, parse_mode=ParseMode.HTML, reply_markup=reply_markup, disable_web_page_preview=True)
+        await update.message.reply_text(
+            t,
+            parse_mode=ParseMode.HTML,
+            disable_web_page_preview=True,
+            reply_markup=keyboard
+        )
 
 async def refresh_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
-    await query.answer()
+    await query.answer("Обновляю токены...")
     tokens = await get_tokens()
-    if tokens:
-        await query.edit_message_text(tokens[0], parse_mode=ParseMode.HTML, disable_web_page_preview=True, reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("🔄 Обновить", callback_data='refresh')]]))
 
-async def auto_update(app: Application):
-    global chat_id_for_auto_update
-    while True:
-        if chat_id_for_auto_update:
-            tokens = await get_tokens()
-            if tokens:
-                await app.bot.send_message(chat_id=chat_id_for_auto_update, text=tokens[0], parse_mode=ParseMode.HTML, disable_web_page_preview=True, reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("🔄 Обновить", callback_data='refresh')]]))
-        await asyncio.sleep(3600)
-
-async def on_startup(app: Application):
-    app.create_task(auto_update(app))
+    for t in tokens:
+        await query.message.reply_text(
+            t,
+            parse_mode=ParseMode.HTML,
+            disable_web_page_preview=True
+        )
 
 if __name__ == '__main__':
-    app = ApplicationBuilder().token(BOT_TOKEN).post_init(on_startup).build()
-
+    app = ApplicationBuilder().token(BOT_TOKEN).build()
     app.add_handler(CommandHandler("tokens", tokens_command))
-    app.add_handler(CallbackQueryHandler(refresh_callback, pattern="refresh"))
-
+    app.add_handler(CallbackQueryHandler(refresh_callback, pattern="refresh_tokens"))
     print("Бот запущен...")
     app.run_polling()
