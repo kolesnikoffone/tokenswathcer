@@ -18,7 +18,6 @@ logger = logging.getLogger(__name__)
 
 REFERRAL_PREFIX = "prghZZEt-"
 
-
 def address_to_base64url(address: str) -> str:
     address = address.strip()
     if ':' in address:
@@ -67,7 +66,7 @@ async def get_tokens():
                     for token in tokens:
                         try:
                             cap = float(token.get("marketCap", 0)) * ton_usd_price / 1e9
-                            if cap >= 11:
+                            if cap >= 11000:
                                 filtered.append((token, cap))
                         except:
                             continue
@@ -75,7 +74,7 @@ async def get_tokens():
                     for idx, (token, cap) in enumerate(filtered[:15], 1):
                         name = token.get('name', 'N/A')
                         symbol = token.get('symbol', 'N/A')
-                        address = token.get('address')
+                        address = token.get('masterAddress') or token.get('address')
                         change = token.get('priceChange1H')
 
                         mcap = f"<b>${cap/1000:.1f}K</b>" if cap >= 1_000 else f"<b>${cap:.2f}</b>"
