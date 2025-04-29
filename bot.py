@@ -2,12 +2,13 @@ import asyncio
 import logging
 import httpx
 import base64
+import os
 from aiogram import Bot, Dispatcher, types
 from aiogram.types import InlineKeyboardButton, InlineKeyboardMarkup
 from aiogram.filters import CommandStart, Command
 from aiogram import F
 
-API_TOKEN = 'YOUR_TELEGRAM_BOT_TOKEN'
+API_TOKEN = os.getenv('API_TOKEN')
 BIGPUMP_API_URL = 'https://prod-api.bigpump.app/api/v1/coins/list?limit=100&sort=liq_mcap&order=desc'
 TON_API_URL = 'https://api.ton.sh/rates'
 REFERRAL_PREFIX = 'prghZZEt-'
