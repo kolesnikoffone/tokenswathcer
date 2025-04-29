@@ -2,7 +2,6 @@ import logging
 import os
 import aiohttp
 import base64
-import crcmod
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.constants import ParseMode
 from telegram.ext import ApplicationBuilder, CommandHandler, ContextTypes, CallbackQueryHandler
@@ -19,6 +18,20 @@ logger = logging.getLogger(__name__)
 
 REFERRAL_PREFIX = "prghZZEt-"
 
+last_valid_tokens = "Нет подходящих токенов"
+
+def crc16_ccitt_false(data: bytes) -> int:
+    crc = 0xFFFF
+    for b in data:
+        crc ^= b << 8
+        for _ in range(8):
+            if crc & 0x8000:
+                crc = (crc << 1) ^ 0x1021
+            else:
+                crc <<= 1
+            crc &= 0xFFFF
+    return crc
+
 def address_to_base64url(address: str, bounceable: bool = True, testnet: bool = False) -> str:
     address = address.strip()
     if ':' not in address:
@@ -33,19 +46,16 @@ def address_to_base64url(address: str, bounceable: bool = True, testnet: bool = 
 
     addr_bytes = bytes.fromhex(hex_part)
 
-    tag = 0x11  # bounceable=True, testnet=False
-    if not bounceable:
-        tag = 0x51
+    tag = 0x11 if bounceable else 0x51
     if testnet:
         tag |= 0x80
 
     workchain_byte = wc.to_bytes(1, byteorder='big', signed=True)
     data = bytes([tag]) + workchain_byte + addr_bytes
 
-    crc16 = crcmod.predefined.mkPredefinedCrcFun('crc-ccitt-false')
-    checksum = crc16(data).to_bytes(2, 'big')
-
+    checksum = crc16_ccitt_false(data).to_bytes(2, 'big')
     full_data = data + checksum
+
     b64url = base64.urlsafe_b64encode(full_data).decode().rstrip('=')
     return b64url
 
@@ -154,23 +164,29 @@ async def get_tokens():
         return f"Ошибка при запросе: {str(e)}"
 
 async def tokens_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    global last_valid_tokens
     tokens = await get_tokens()
+    if "Нет подходящих" not in tokens:
+        last_valid_tokens = tokens
 
     keyboard = InlineKeyboardMarkup([
         [InlineKeyboardButton("🔁 Обновить", callback_data="refresh_tokens")]
     ])
 
     await update.message.reply_text(
-        tokens[:4000],
+        last_valid_tokens[:4000],
         parse_mode=ParseMode.HTML,
         disable_web_page_preview=True,
         reply_markup=keyboard
     )
 
 async def refresh_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    global last_valid_tokens
     query = update.callback_query
     await query.answer("Обновляю...")
     tokens = await get_tokens()
+    if "Нет подходящих" not in tokens:
+        last_valid_tokens = tokens
 
     keyboard = InlineKeyboardMarkup([
         [InlineKeyboardButton("🔁 Обновить", callback_data="refresh_tokens")]
