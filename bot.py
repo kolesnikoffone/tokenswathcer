@@ -55,11 +55,12 @@ async def get_tokens():
     url = 'https://prod-api.bigpump.app/api/v1/coins?sortType=pocketfi&limit=30'
     headers = {
         'accept': '*/*',
+        'accept-language': 'en-US,en;q=0.9,ru-RU;q=0.8,ru;q=0.7',
         'authorization': 'Bearer eyJhbGciOiJIUzI1NiJ9.eyJhZGRyZXNzIjoiMDpmNWI5MWRkZDBiOWM4N2VmNjUwMTFhNzlmMWRhNzE5NzIwYzVhODgwN2I1NGMxYTQwNTIyNzRmYTllMzc5YmNkIiwibmV0d29yayI6Ii0yMzkiLCJpYXQiOjE3NDI4MDY4NTMsImV4cCI6MTc3NDM2NDQ1M30.U_GaaX5psI572w4YmwAjlh8u4uFBVHdsD-zJacvWiPo',
         'origin': 'https://bigpump.app',
         'referer': 'https://bigpump.app/',
         'user-agent': 'Mozilla/5.0'
-    }
+    }  # НЕ ТРОГАТЬ!
     try:
         async with aiohttp.ClientSession() as session:
             async with session.get(url, headers=headers) as response:
@@ -126,40 +127,41 @@ async def get_tokens():
                         line = f"{idx}. {name_symbol} | {mcap} | {growth_str}"
                         result.append(line)
 
-                    return ["\n\n".join(result)] if result else ["Нет подходящих токенов"]
+                    return "\n\n".join(result) if result else "Нет подходящих токенов"
                 else:
-                    return [f"Ошибка {response.status}"]
+                    return f"Ошибка {response.status}"
     except Exception as e:
         logger.exception("Ошибка при обращении к BigPump API")
-        return [f"Ошибка при запросе: {str(e)}"]
+        return f"Ошибка при запросе: {str(e)}"
 
 async def tokens_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    await update.message.reply_text("Получаю токены с BigPump...")
     tokens = await get_tokens()
 
     keyboard = InlineKeyboardMarkup([
         [InlineKeyboardButton("🔁 Обновить", callback_data="refresh_tokens")]
     ])
 
-    for t in tokens:
-        await update.message.reply_text(
-            t,
-            parse_mode=ParseMode.HTML,
-            disable_web_page_preview=True,
-            reply_markup=keyboard
-        )
+    await update.message.reply_text(
+        tokens,
+        parse_mode=ParseMode.HTML,
+        disable_web_page_preview=True,
+        reply_markup=keyboard
+    )
 
 async def refresh_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
-    await query.answer("Обновляю токены...")
     tokens = await get_tokens()
 
-    for t in tokens:
-        await query.message.reply_text(
-            t,
-            parse_mode=ParseMode.HTML,
-            disable_web_page_preview=True
-        )
+    keyboard = InlineKeyboardMarkup([
+        [InlineKeyboardButton("🔁 Обновить", callback_data="refresh_tokens")]
+    ])
+
+    await query.edit_message_text(
+        tokens,
+        parse_mode=ParseMode.HTML,
+        disable_web_page_preview=True,
+        reply_markup=keyboard
+    )
 
 if __name__ == '__main__':
     app = ApplicationBuilder().token(BOT_TOKEN).build()
