@@ -51,6 +51,8 @@ async def get_tokens():
         'accept': '*/*',
         'origin': 'https://bigpump.app',
         'referer': 'https://bigpump.app/',
+        'user-agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/135.0.0.0 Safari/537.36',
+        'telegramrawdata': 'query_id=AAEaYrUMAAAAABpitQwu6gcp&user=%7B%22id%22%3A213213722%2C%22first_name%22%3A%22Igor%22%2C%22last_name%22%3A%22Koles%22%2C%22username%22%3A%22kolesnikoffone%22%2C%22language_code%22%3A%22en%22%2C%22is_premium%22%3Atrue%2C%22allows_write_to_pm%22%3Atrue%2C%22photo_url%22%3A%22https%3A%5C%2F%5C%2Ft.me%5C%2Fi%5C%2Fuserpic%5C%2F320%5C%2FLOS2-JjhnhmjzAqoRwJhBdgkfv48pIMkDeo8El8OkCc.svg%22%7D&auth_date=1739471509&signature=_BACnt92QPix6-bfrlGuo5HiA4XBiSI6BP-v3jQRUVJqp2N8ydUMmWGixj4e9s9x0o0xONFOa51eo2W1JfbYBQ&hash=0c3fd36bf663249d93da37b949087c716d9e883171da0fa107f026bf439bd9d3'
     }
     try:
         async with aiohttp.ClientSession() as session:
