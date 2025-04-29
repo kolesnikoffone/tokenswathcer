@@ -1,4 +1,4 @@
-import logging
+""import logging
 import os
 import aiohttp
 from telegram import Update
@@ -65,7 +65,12 @@ async def get_tokens():
                             cap = 0
 
                         if cap > 0:
-                            mcap = f"${cap / 1e6:.1f}M" if cap >= 1e6 else f"${cap / 1e3:.1f}K"
+                            if cap >= 1_000_000:
+                                mcap = f"${cap / 1e6:.1f}M"
+                            elif cap >= 1_000:
+                                mcap = f"${cap / 1e3:.1f}K"
+                            else:
+                                mcap = f"${cap:.2f}"
                         else:
                             mcap = "N/A"
 
