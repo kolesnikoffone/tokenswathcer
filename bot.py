@@ -1,67 +1,69 @@
-import logging
+import os
+import asyncio
 import httpx
 from telegram import Update
-from telegram.ext import ApplicationBuilder, CommandHandler, ContextTypes
+from telegram.ext import Application, CommandHandler, ContextTypes
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 
-# Логирование
-logging.basicConfig(level=logging.INFO)
+TELEGRAM_BOT_TOKEN = os.environ.get("TELEGRAM_BOT_TOKEN")
+TELEGRAM_CHAT_ID = os.environ.get("TELEGRAM_CHAT_ID")
 
-# Telegram токен (замени на свой, если нужно)
-TOKEN = "YOUR_TELEGRAM_BOT_TOKEN"
+if not TELEGRAM_BOT_TOKEN or not TELEGRAM_CHAT_ID:
+    raise EnvironmentError("TELEGRAM_BOT_TOKEN or TELEGRAM_CHAT_ID not set in environment.")
 
-# Команда /listings
-async def listings_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    url = 'https://prod-api.bigpump.app/api/v1/coins?sortType=listing&limit=20'
+API_URL = "https://prod-api.bigpump.app/api/v1/coins?sortType=new&limit=20"
+
+async def fetch_latest_coins():
     headers = {
         'accept': '*/*',
         'origin': 'https://bigpump.app',
         'referer': 'https://bigpump.app/',
         'user-agent': 'Mozilla/5.0'
     }
+    async with httpx.AsyncClient() as client:
+        try:
+            response = await client.get(API_URL, headers=headers)
+            response.raise_for_status()
+            return response.json()
+        except Exception as e:
+            print(f"Error fetching data: {e}")
+            return []
 
-    try:
-        response = httpx.get(url, headers=headers)
-        response.raise_for_status()
-        data = response.json()
-        tokens = data.get("coins", [])
+def format_coin_message(coins):
+    if not coins:
+        return "Нет новых токенов с BigPump."
+    
+    message = "🆕 *Новые токены BigPump:*\n"
+    for coin in coins[:20]:
+        name = coin.get("name", "Без названия")
+        symbol = coin.get("symbol", "")
+        tv_link = f"https://tonviewer.com/{coin.get('address', '')}"
+        message += f"• {name} ({symbol}) — [Смотреть]({tv_link})\n"
+    return message
 
-        if not tokens:
-            await update.message.reply_text("Новых листингов не найдено.")
-            return
+async def send_updates(context: ContextTypes.DEFAULT_TYPE):
+    coins = await fetch_latest_coins()
+    message = format_coin_message(coins)
+    await context.bot.send_message(chat_id=TELEGRAM_CHAT_ID, text=message, parse_mode="Markdown")
 
-        message_lines = ["🆕 *Последние листинги BigPump:*"]
-        for i, token in enumerate(tokens, start=1):
-            name = token.get("name", "???")
-            symbol = token.get("symbol", "???")
-            price = token.get("price_usd", 0)
-            address = token.get("address", "")
-            link = f"https://tonviewer.com/{address}"
-            message_lines.append(f"{i}. {name} ({symbol}) — ${price:.4f} [🔍 TonViewer]({link})")
+async def top_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    coins = await fetch_latest_coins()
+    message = format_coin_message(coins)
+    await update.message.reply_text(message, parse_mode="Markdown")
 
-        message = "\n".join(message_lines)
-        await update.message.reply_markdown(message)
-
-    except Exception as e:
-        logging.error(f"Ошибка в /listings: {e}")
-        await update.message.reply_text("Ошибка при получении данных.")
-
-# Главная функция
 async def main():
-    app = ApplicationBuilder().token(TOKEN).build()
+    application = Application.builder().token(TELEGRAM_BOT_TOKEN).build()
 
-    # Регистрируем команду
-    app.add_handler(CommandHandler("listings", listings_command))
+    application.add_handler(CommandHandler("top", top_handler))
 
-    # Планировщик (если потом понадобится)
     scheduler = AsyncIOScheduler()
+    scheduler.add_job(send_updates, "interval", minutes=30, args=[application.bot])
     scheduler.start()
 
-    await app.initialize()
-    await app.start()
-    await app.updater.start_polling()
-    await app.updater.idle()
+    await application.initialize()
+    await application.start()
+    await application.updater.start_polling()
+    await application.updater.idle()
 
 if __name__ == "__main__":
-    import asyncio
     asyncio.run(main())
