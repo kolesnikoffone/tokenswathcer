@@ -19,7 +19,7 @@ logger = logging.getLogger(__name__)
 
 REFERRAL_PREFIX = "prghZZEt-"
 
-def address_to_base64url(address: str) -> str:
+def address_to_base64url(address: str, bounceable: bool = True, testnet: bool = False) -> str:
     address = address.strip()
     if ':' in address:
         wc, hex_addr = address.split(':')
@@ -29,7 +29,10 @@ def address_to_base64url(address: str) -> str:
         wc = 0
         hex_addr = bytes.fromhex(address)
 
-    tag = 0x11
+    tag = 0x11 if bounceable else 0x51
+    if testnet:
+        tag |= 0x80
+
     workchain_byte = wc.to_bytes(1, byteorder="big", signed=True)
     data = bytes([tag]) + workchain_byte + hex_addr
 
@@ -56,7 +59,7 @@ async def get_tokens():
     headers = {
         'accept': '*/*',
         'accept-language': 'en-US,en;q=0.9,ru-RU;q=0.8,ru;q=0.7',
-        'authorization': 'Bearer eyJhbGciOiJIUzI1NiJ9.eyJhZGRyZXNzIjoiMDpmNWI5MWRkZDBiOWM4N2VmNjUwMTFhNzlmMWRhNzE5NzIwYzVhODgwN2I1NGMxYTQwNTIyNzRmYTllMzc5YmNkIiwibmV0d29yayI6Ii0yMzkiLCJpYXQiOjE3NDI4MDY4NTMsImV4cCI6MTc3NDM2NDQ1M30.U_GaaX5psI572w4YmwAjlh8u4uFBVHdsD-zJacvWiPo',
+        'authorization': 'Bearer eyJhbGciOiJIUzI1NiJ9.eyJhZGRyZXNzIjoiMDpmNWI5MWRkZDBiOWM4N2VmNjUwMTFhNzlmMWRhNzE5NzIwYzVhODgwN2I1NGMxYTQwNTIyNzRmYTllMzc5YmNkIiwibmV0d29yayI6Ii0yMzkiLCJpYXQiOjE3NDI4MDY4NTMsImV4cCI6MTc3NDM2NDQ1M30.U_GaaX5psI572w4y...
         'origin': 'https://bigpump.app',
         'referer': 'https://bigpump.app/',
         'user-agent': 'Mozilla/5.0'
