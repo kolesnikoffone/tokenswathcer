@@ -1,23 +1,20 @@
 import logging
 import os
 import aiohttp
-from telegram import Update
+from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.constants import ParseMode
-from telegram.ext import ApplicationBuilder, CommandHandler, ContextTypes
+from telegram.ext import ApplicationBuilder, CommandHandler, ContextTypes, CallbackQueryHandler
 
-# Получаем токен из переменных окружения
 BOT_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN")
 if not BOT_TOKEN:
     raise ValueError("Переменная окружения TELEGRAM_BOT_TOKEN не установлена")
 
-# Настройка логгирования
 logging.basicConfig(
     format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
     level=logging.INFO
 )
 logger = logging.getLogger(__name__)
 
-# Функция запроса цены TON с CoinGecko
 async def get_ton_price():
     url = 'https://api.coingecko.com/api/v3/simple/price?ids=the-open-network&vs_currencies=usd'
     try:
@@ -30,7 +27,6 @@ async def get_ton_price():
         logger.warning(f"Не удалось получить цену TON: {e}")
     return 0
 
-# Функция запроса данных с BigPump
 async def get_tokens():
     url = 'https://prod-api.bigpump.app/api/v1/coins?sortType=pocketfi&limit=50'
     headers = {
@@ -50,7 +46,7 @@ async def get_tokens():
                     tokens = data.get('coins', [])
                     ton_usd_price = await get_ton_price()
                     result = []
-                    for token in tokens:
+                    for idx, token in enumerate(tokens):
                         name = token.get('name')
                         symbol = token.get('symbol')
 
@@ -66,16 +62,16 @@ async def get_tokens():
                             continue
 
                         if cap >= 1_000_000:
-                            mcap = f"${cap / 1e6:.1f}M"
+                            mcap = f"<b>${cap / 1e6:.1f}M</b>"
                         elif cap >= 1_000:
-                            mcap = f"${cap / 1e3:.1f}K"
+                            mcap = f"<b>${cap / 1e3:.1f}K</b>"
                         else:
-                            mcap = f"${cap:.2f}"
+                            mcap = f"<b>${cap:.2f}</b>"
 
                         change = token.get('priceChange1H')
                         growth = f"{float(change):.2f}%" if change else "N/A"
 
-                        result.append(f"{name} ({symbol}) | {mcap} | {growth}")
+                        result.append(f"{len(result)+1}. {name} ({symbol}) | {mcap} | {growth}")
 
                     if not result:
                         result.append("Нет токенов в ответе от BigPump.")
@@ -86,17 +82,26 @@ async def get_tokens():
         logger.exception("Ошибка при обращении к BigPump API")
         return [f"Ошибка при запросе: {str(e)}"]
 
-# Обработчик команды /tokens
 async def tokens_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     tokens = await get_tokens()
     for t in tokens:
-        await update.effective_chat.send_message(t, parse_mode=ParseMode.HTML, disable_web_page_preview=True)
+        keyboard = [[InlineKeyboardButton("Обновить", callback_data='refresh_tokens')]]
+        reply_markup = InlineKeyboardMarkup(keyboard)
+        await update.effective_chat.send_message(t, parse_mode=ParseMode.HTML, disable_web_page_preview=True, reply_markup=reply_markup)
 
-# Основной запуск бота
+async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    query = update.callback_query
+    await query.answer()
+    if query.data == 'refresh_tokens':
+        tokens = await get_tokens()
+        if tokens:
+            await query.edit_message_text(text=tokens[0], parse_mode=ParseMode.HTML, reply_markup=query.message.reply_markup)
+
 if __name__ == '__main__':
     app = ApplicationBuilder().token(BOT_TOKEN).build()
 
     app.add_handler(CommandHandler("tokens", tokens_command))
+    app.add_handler(CallbackQueryHandler(button_handler))
 
     print("Бот запущен...")
     app.run_polling()
