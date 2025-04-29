@@ -3,3 +3,4 @@ aiogram==3.4.1
 httpx
 aiohttp
 crcmod
+tonsdk
