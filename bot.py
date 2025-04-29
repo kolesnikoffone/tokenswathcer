@@ -1,11 +1,10 @@
 import logging
 import os
 import aiohttp
-import base64
-import crcmod
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.constants import ParseMode
 from telegram.ext import ApplicationBuilder, CommandHandler, CallbackQueryHandler, ContextTypes
+from ton.utils import address as ton_address
 
 # Получаем токен из переменных окружения
 BOT_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN")
@@ -20,29 +19,15 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 REFERRAL_PREFIX = "prghZZEt-"
-LATEST_RESULT = None
 
+def address_to_base64url(raw: str) -> str:
+    try:
+        return ton_address.to_userfriendly(raw, bounceable=True, testnet=False, urlsafe=True)
+    except Exception as e:
+        logger.warning(f"Ошибка при кодировании адреса {raw}: {e}")
+        return None
 
-def address_to_base64url(address: str) -> str:
-    address = address.strip()
-    if ':' in address:
-        wc_str, hex_addr = address.split(':')
-        wc = int(wc_str)
-        hex_addr = bytes.fromhex(hex_addr)
-    else:
-        wc = 0
-        hex_addr = bytes.fromhex(address)
-
-    tag = 0x11  # 0x11 = bounceable address, non-testnet
-    workchain_byte = wc.to_bytes(1, byteorder="big", signed=True)
-    addr_data = bytes([tag]) + workchain_byte + hex_addr
-
-    crc16 = crcmod.predefined.mkPredefinedCrcFun('crc-ccitt-false')
-    checksum = crc16(addr_data).to_bytes(2, 'big')
-
-    full_data = addr_data + checksum
-    return base64.urlsafe_b64encode(full_data).decode()
-
+cached_result = None
 
 async def get_ton_price():
     url = 'https://api.coingecko.com/api/v3/simple/price?ids=the-open-network&vs_currencies=usd'
@@ -56,8 +41,8 @@ async def get_ton_price():
         logger.warning(f"Не удалось получить цену TON: {e}")
     return 0
 
-
 async def get_tokens():
+    global cached_result
     url = 'https://prod-api.bigpump.app/api/v1/coins?sortType=pocketfi&limit=30'
     headers = {
         'accept': '*/*',
@@ -89,15 +74,18 @@ async def get_tokens():
                     for idx, (token, cap) in enumerate(filtered[:15], 1):
                         name = token.get('name', 'N/A')
                         symbol = token.get('symbol', 'N/A')
-                        address = token.get('address')
+                        address_raw = token.get('address')
                         change = token.get('priceChange1H')
 
-                        mcap = f"<b>${cap/1000:.1f}K</b>" if cap >= 1000 else f"<b>${cap:.2f}</b>"
+                        mcap = f"<b>${cap/1000:.1f}K</b>" if cap >= 1_000 else f"<b>${cap:.2f}</b>"
 
-                        if address:
-                            encoded_address = address_to_base64url(address)
-                            link = f"https://t.me/tontrade?start={REFERRAL_PREFIX}{encoded_address}"
-                            name_symbol = f'<a href="{link}">{name} ({symbol})</a>'
+                        if address_raw:
+                            encoded = address_to_base64url(address_raw)
+                            if encoded:
+                                link = f"https://t.me/tontrade?start={REFERRAL_PREFIX}{encoded}"
+                                name_symbol = f'<a href="{link}">{name} ({symbol})</a>'
+                            else:
+                                name_symbol = f'{name} ({symbol})'
                         else:
                             name_symbol = f'{name} ({symbol})'
 
@@ -129,49 +117,29 @@ async def get_tokens():
                         line = f"{idx}. {name_symbol} | {mcap} | {growth_str}"
                         result.append(line)
 
-                    return ["\n\n".join(result)] if result else ["Нет подходящих токенов"]
+                    cached_result = "\n\n".join(result)
+                    return cached_result
                 else:
-                    return [f"Ошибка {response.status}"]
+                    return "Ошибка получения данных"
     except Exception as e:
         logger.exception("Ошибка при обращении к BigPump API")
-        return [f"Ошибка при запросе: {str(e)}"]
-
+        return "Ошибка при запросе"
 
 async def listings_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    global LATEST_RESULT
-    if LATEST_RESULT:
-        tokens = LATEST_RESULT
-    else:
-        tokens = await get_tokens()
-        if tokens:
-            LATEST_RESULT = tokens
+    message_text = cached_result or await get_tokens()
+    keyboard = InlineKeyboardMarkup([[InlineKeyboardButton("🔄 Обновить", callback_data="refresh")]])
+    await update.message.reply_text(message_text, parse_mode=ParseMode.HTML, disable_web_page_preview=True, reply_markup=keyboard)
 
-    message = await update.message.reply_text(tokens[0], parse_mode=ParseMode.HTML, disable_web_page_preview=True, reply_markup=InlineKeyboardMarkup([
-        [InlineKeyboardButton("Обновить", callback_data="refresh")]
-    ]))
-    context.chat_data['last_message_id'] = message.message_id
-
-
-async def refresh_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    global LATEST_RESULT
+async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     await query.answer()
-
-    tokens = await get_tokens()
-    if tokens:
-        LATEST_RESULT = tokens
-
-    try:
-        await query.edit_message_text(tokens[0], parse_mode=ParseMode.HTML, disable_web_page_preview=True, reply_markup=InlineKeyboardMarkup([
-            [InlineKeyboardButton("Обновить", callback_data="refresh")]
-        ]))
-    except Exception as e:
-        logger.warning(f"Ошибка обновления сообщения: {e}")
-
+    new_data = await get_tokens()
+    if new_data != query.message.text_html:
+        await query.edit_message_text(new_data, parse_mode=ParseMode.HTML, disable_web_page_preview=True, reply_markup=query.message.reply_markup)
 
 if __name__ == '__main__':
     app = ApplicationBuilder().token(BOT_TOKEN).build()
     app.add_handler(CommandHandler("listings", listings_command))
-    app.add_handler(CallbackQueryHandler(refresh_callback, pattern="^refresh$"))
+    app.add_handler(CallbackQueryHandler(button_handler))
     print("Бот запущен...")
     app.run_polling()
