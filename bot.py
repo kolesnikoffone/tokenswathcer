@@ -3,9 +3,9 @@ import os
 import aiohttp
 import base64
 import crcmod
-from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
+from telegram import InlineKeyboardButton, InlineKeyboardMarkup, Update
 from telegram.constants import ParseMode
-from telegram.ext import ApplicationBuilder, CommandHandler, ContextTypes, CallbackQueryHandler
+from telegram.ext import ApplicationBuilder, CommandHandler, CallbackQueryHandler, ContextTypes
 
 BOT_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN")
 if not BOT_TOKEN:
@@ -18,28 +18,28 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 REFERRAL_PREFIX = "prghZZEt-"
-last_token_message = {}
+latest_tokens_result = None
+
 
 def address_to_base64url(address: str) -> str:
     address = address.strip()
     if ':' in address:
-        wc, hex_addr = address.split(':')
-        wc = int(wc)
-        hex_addr = bytes.fromhex(hex_addr)
+        wc_str, hex_addr = address.split(':')
+        wc = int(wc_str)
+        addr_bytes = bytes.fromhex(hex_addr)
     else:
         wc = 0
-        hex_addr = bytes.fromhex(address)
+        addr_bytes = bytes.fromhex(address)
 
-    tag = 0x11  # bounceable = 1, testnet = 0
-    workchain_byte = wc.to_bytes(1, byteorder="big", signed=True)
-    data = bytes([tag]) + workchain_byte + hex_addr
+    tag = 0x11
+    wc_byte = wc.to_bytes(1, byteorder="big", signed=True)
+    data = bytes([tag]) + wc_byte + addr_bytes
 
     crc16 = crcmod.predefined.mkPredefinedCrcFun('crc-ccitt-false')
     checksum = crc16(data).to_bytes(2, 'big')
+    full = data + checksum
+    return base64.urlsafe_b64encode(full).decode()  # НЕ удаляем padding
 
-    full_data = data + checksum
-    encoded = base64.urlsafe_b64encode(full_data).decode().rstrip("=")
-    return encoded.replace("-", "_").replace("/", "_")
 
 async def get_ton_price():
     url = 'https://api.coingecko.com/api/v3/simple/price?ids=the-open-network&vs_currencies=usd'
@@ -52,6 +52,7 @@ async def get_ton_price():
     except Exception as e:
         logger.warning(f"Не удалось получить цену TON: {e}")
     return 0
+
 
 async def get_tokens():
     url = 'https://prod-api.bigpump.app/api/v1/coins?sortType=pocketfi&limit=30'
@@ -90,14 +91,12 @@ async def get_tokens():
 
                         mcap = f"<b>${cap/1000:.1f}K</b>" if cap >= 1_000 else f"<b>${cap:.2f}</b>"
 
-                        name_symbol = f'{name} ({symbol})'
                         if address:
-                            try:
-                                encoded_address = address_to_base64url(address)
-                                link = f"https://t.me/tontrade?start={REFERRAL_PREFIX}{encoded_address}"
-                                name_symbol = f'<a href="{link}">{name} ({symbol})</a>'
-                            except Exception as e:
-                                logger.warning(f"Ошибка кодирования адреса {address}: {e}")
+                            encoded_address = address_to_base64url(address)
+                            link = f"https://t.me/tontrade?start={REFERRAL_PREFIX}{encoded_address}"
+                            name_symbol = f'<a href="{link}">{name} ({symbol})</a>'
+                        else:
+                            name_symbol = f'{name} ({symbol})'
 
                         emoji = ""
                         try:
@@ -134,43 +133,37 @@ async def get_tokens():
         logger.exception("Ошибка при обращении к BigPump API")
         return f"Ошибка при запросе: {str(e)}"
 
+
 async def listings_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    chat_id = update.effective_chat.id
+    global latest_tokens_result
     result = await get_tokens()
-    reply_markup = InlineKeyboardMarkup([
-        [InlineKeyboardButton("Обновить", callback_data="refresh")]
-    ])
+    if result:
+        latest_tokens_result = result
+        keyboard = InlineKeyboardMarkup([
+            [InlineKeyboardButton("🔄 Обновить", callback_data="refresh")]
+        ])
+        await update.message.reply_text(result, parse_mode=ParseMode.HTML, disable_web_page_preview=True, reply_markup=keyboard)
 
-    if update.message:
-        msg = await update.message.reply_text(result, parse_mode=ParseMode.HTML, disable_web_page_preview=True, reply_markup=reply_markup)
-        last_token_message[chat_id] = msg.message_id
 
-async def refresh_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
+async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    global latest_tokens_result
     query = update.callback_query
     await query.answer()
-    chat_id = query.message.chat_id
-    message_id = query.message.message_id
+    result = await get_tokens()
+    if result and result != latest_tokens_result:
+        latest_tokens_result = result
+        keyboard = InlineKeyboardMarkup([
+            [InlineKeyboardButton("🔄 Обновить", callback_data="refresh")]
+        ])
+        try:
+            await query.edit_message_text(text=result, parse_mode=ParseMode.HTML, disable_web_page_preview=True, reply_markup=keyboard)
+        except Exception as e:
+            logger.warning(f"Не удалось обновить сообщение: {e}")
 
-    new_text = await get_tokens()
-
-    try:
-        await context.bot.edit_message_text(
-            chat_id=chat_id,
-            message_id=message_id,
-            text=new_text,
-            parse_mode=ParseMode.HTML,
-            disable_web_page_preview=True,
-            reply_markup=InlineKeyboardMarkup([
-                [InlineKeyboardButton("Обновить", callback_data="refresh")]
-            ])
-        )
-    except Exception as e:
-        if "Message is not modified" not in str(e):
-            logger.warning(f"Ошибка при обновлении сообщения: {e}")
 
 if __name__ == '__main__':
     app = ApplicationBuilder().token(BOT_TOKEN).build()
     app.add_handler(CommandHandler("listings", listings_command))
-    app.add_handler(CallbackQueryHandler(refresh_callback, pattern="^refresh$"))
-    logger.info("Бот запущен...")
+    app.add_handler(CallbackQueryHandler(button_callback))
+    print("Бот запущен...")
     app.run_polling()
