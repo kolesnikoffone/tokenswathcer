@@ -62,15 +62,15 @@ async def get_tokens():
                             logger.warning(f"Ошибка при расчете капитализации для {name}: {e}")
                             cap = 0
 
-                        if cap > 0:
-                            if cap >= 1_000_000:
-                                mcap = f"${cap / 1e6:.1f}M"
-                            elif cap >= 1_000:
-                                mcap = f"${cap / 1e3:.1f}K"
-                            else:
-                                mcap = f"${cap:.2f}"
+                        if cap < 11_000:
+                            continue
+
+                        if cap >= 1_000_000:
+                            mcap = f"${cap / 1e6:.1f}M"
+                        elif cap >= 1_000:
+                            mcap = f"${cap / 1e3:.1f}K"
                         else:
-                            mcap = "N/A"
+                            mcap = f"${cap:.2f}"
 
                         change = token.get('priceChange1H')
                         growth = f"{float(change):.2f}%" if change else "N/A"
@@ -88,7 +88,6 @@ async def get_tokens():
 
 # Обработчик команды /tokens
 async def tokens_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    await update.effective_chat.send_message("Получаю токены с BigPump...")
     tokens = await get_tokens()
     for t in tokens:
         await update.effective_chat.send_message(t, parse_mode=ParseMode.HTML, disable_web_page_preview=True)
