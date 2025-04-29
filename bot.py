@@ -40,11 +40,11 @@ async def get_tokens():
                         name = token.get('name')
                         symbol = token.get('symbol')
 
-                        # Попытка вычислить капу вручную через деление на курс и 10
+                        # Вычисление капы по формуле: liqCurrentUsdPrice * tonLiqCollected / 1e9
                         try:
-                            market_cap_raw = float(token.get('marketCap') or 0)
-                            ton_price = float(token.get('liqCurrentUsdPrice') or 1)
-                            cap = market_cap_raw / ton_price / 10
+                            ton_price = float(token.get('liqCurrentUsdPrice') or 0)
+                            ton_collected = float(token.get('tonLiqCollected') or 0)
+                            cap = ton_price * ton_collected / 1e9
                         except:
                             cap = 0
 
