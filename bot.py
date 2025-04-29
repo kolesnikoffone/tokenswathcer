@@ -13,6 +13,7 @@ BIGPUMP_API_URL = 'https://prod-api.bigpump.app/api/v1/coins/list?limit=150&sort
 BIGPUMP_API_TOKEN = os.getenv('BIGPUMP_API_TOKEN')
 TON_API_URL = 'https://api.ton.sh/rates'
 REFERRAL_PREFIX = 'prghZZEt-'
+TELEGRAM_RAW_DATA = os.getenv('TELEGRAM_RAW_DATA')
 
 bot = Bot(token=API_TOKEN)
 dp = Dispatcher()
@@ -37,7 +38,8 @@ async def fetch_bigpump_data():
         'Authorization': f'Bearer {BIGPUMP_API_TOKEN}',
         'Origin': 'https://bigpump.app',
         'Referer': 'https://bigpump.app/',
-        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/112.0.0.0 Safari/537.36'
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/112.0.0.0 Safari/537.36',
+        'telegramrawdata': TELEGRAM_RAW_DATA
     }
     async with httpx.AsyncClient() as client:
         response = await client.get(BIGPUMP_API_URL, headers=headers)
