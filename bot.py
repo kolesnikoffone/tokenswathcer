@@ -40,7 +40,7 @@ async def get_tokens():
                         name = token.get('name')
                         symbol = token.get('symbol')
                         ton_price = float(token.get('liqCurrentUsdPrice') or 0)
-                        cap_ton = float(token.get('tonLiqCollected') or 0)
+                        cap_ton = float(token.get('tonLiqCollected') or 0) / 1e9  # Convert from nanotons to TON
                         cap = cap_ton * ton_price if ton_price and cap_ton else None
                         change = token.get('priceChange1H')
 
