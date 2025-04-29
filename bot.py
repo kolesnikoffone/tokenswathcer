@@ -1,4 +1,4 @@
-import logging
+""import logging
 import os
 import aiohttp
 from telegram import Update
@@ -60,7 +60,7 @@ async def get_tokens():
 
                         try:
                             ton_collected = float(token.get('tonLiqCollected') or 0)
-                            cap = ton_collected * ton_usd_price / 1e9
+                            cap = ton_collected * ton_usd_price
                         except:
                             cap = 0
 
