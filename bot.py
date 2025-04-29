@@ -1,5 +1,16 @@
-import httpx  # Убедись, что эта строка есть
+import logging
+import httpx
+from telegram import Update
+from telegram.ext import ApplicationBuilder, CommandHandler, ContextTypes
+from apscheduler.schedulers.asyncio import AsyncIOScheduler
 
+# Логирование
+logging.basicConfig(level=logging.INFO)
+
+# Telegram токен (замени на свой, если нужно)
+TOKEN = "YOUR_TELEGRAM_BOT_TOKEN"
+
+# Команда /listings
 async def listings_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     url = 'https://prod-api.bigpump.app/api/v1/coins?sortType=listing&limit=20'
     headers = {
@@ -34,3 +45,23 @@ async def listings_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     except Exception as e:
         logging.error(f"Ошибка в /listings: {e}")
         await update.message.reply_text("Ошибка при получении данных.")
+
+# Главная функция
+async def main():
+    app = ApplicationBuilder().token(TOKEN).build()
+
+    # Регистрируем команду
+    app.add_handler(CommandHandler("listings", listings_command))
+
+    # Планировщик (если потом понадобится)
+    scheduler = AsyncIOScheduler()
+    scheduler.start()
+
+    await app.initialize()
+    await app.start()
+    await app.updater.start_polling()
+    await app.updater.idle()
+
+if __name__ == "__main__":
+    import asyncio
+    asyncio.run(main())
