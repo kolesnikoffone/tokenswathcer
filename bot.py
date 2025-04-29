@@ -59,7 +59,7 @@ async def get_tokens():
     headers = {
         'accept': '*/*',
         'accept-language': 'en-US,en;q=0.9,ru-RU;q=0.8,ru;q=0.7',
-        'authorization': 'Bearer eyJhbGciOiJIUzI1NiJ9.eyJhZGRyZXNzIjoiMDpmNWI5MWRkZDBiOWM4N2VmNjUwMTFhNzlmMWRhNzE5NzIwYzVhODgwN2I1NGMxYTQwNTIyNzRmYTllMzc5YmNkIiwibmV0d29yayI6Ii0yMzkiLCJpYXQiOjE3NDI4MDY4NTMsImV4cCI6MTc3NDM2NDQ1M30.U_GaaX5psI572w4y...
+        'authorization': 'Bearer eyJhbGciOiJIUzI1NiJ9.eyJhZGRyZXNzIjoiMDpmNWI5MWRkZDBiOWM4N2VmNjUwMTFhNzlmMWRhNzE5NzIwYzVhODgwN2I1NGMxYTQwNTIyNzRmYTllMzc5YmNkIiwibmV0d29yayI6Ii0yMzkiLCJpYXQiOjE3NDI4MDY4NTMsImV4cCI6MTc3NDM2NDQ1M30.U_GaaX5psI572w4YmwAjlh8u4uFBVHdsD-zJacvWiPo',
         'origin': 'https://bigpump.app',
         'referer': 'https://bigpump.app/',
         'user-agent': 'Mozilla/5.0'
@@ -145,7 +145,7 @@ async def tokens_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     ])
 
     await update.message.reply_text(
-        tokens,
+        tokens[:4000],
         parse_mode=ParseMode.HTML,
         disable_web_page_preview=True,
         reply_markup=keyboard
@@ -153,18 +153,31 @@ async def tokens_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 async def refresh_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
+    await query.answer("Обновляю...")
     tokens = await get_tokens()
 
     keyboard = InlineKeyboardMarkup([
         [InlineKeyboardButton("🔁 Обновить", callback_data="refresh_tokens")]
     ])
 
-    await query.edit_message_text(
-        tokens,
-        parse_mode=ParseMode.HTML,
-        disable_web_page_preview=True,
-        reply_markup=keyboard
-    )
+    try:
+        if len(tokens) > 4000:
+            logger.warning(f"Сообщение слишком длинное ({len(tokens)} символов), обрезаем до 4000")
+            tokens = tokens[:4000]
+
+        await query.edit_message_text(
+            tokens,
+            parse_mode=ParseMode.HTML,
+            disable_web_page_preview=True,
+            reply_markup=keyboard
+        )
+    except Exception as e:
+        logger.exception(f"Ошибка при обновлении сообщения: {e}")
+        await query.message.reply_text(
+            "Не удалось обновить сообщение. Попробуйте снова позже.",
+            parse_mode=ParseMode.HTML,
+            disable_web_page_preview=True
+        )
 
 if __name__ == '__main__':
     app = ApplicationBuilder().token(BOT_TOKEN).build()
