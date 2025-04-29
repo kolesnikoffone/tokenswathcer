@@ -108,11 +108,8 @@ async def tokens_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
             growth_str = f"{emoji} {growth}%" if growth != "N/A" else "N/A"
 
-            line = f"{idx}. {clickable_name} | {mcap_str} | {growth_str}\n{'\u2014'*35}"
+            line = f"{idx}. {clickable_name} | {mcap_str} | {growth_str}\n"
             result.append(line)
-
-        if result and result[-1].endswith('\u2014'*35):
-            result[-1] = result[-1].rsplit("\n", 1)[0]
 
         final_text = "\n".join(result)
         await update.message.reply_text(final_text, parse_mode=ParseMode.HTML, disable_web_page_preview=True)
