@@ -39,30 +39,17 @@ async def get_tokens():
                     for token in tokens:
                         name = token.get('name')
                         symbol = token.get('symbol')
-                        address = token.get('address')
-                        desc = token.get('description') or "Без описания"
-                        image = token.get('imageUrl')
                         cap = token.get('marketCap')
                         change = token.get('priceChange1H')
-                        tg = token.get('tgChannel')
 
-                        text = f"<b>{name}</b> ({symbol})\n"
-                        if cap:
-                            text += f"Market Cap: <b>${int(cap)/1e6:.1f}M</b>\n"
-                        if change:
-                            text += f"📈 Growth (1h): <b>{float(change):.2f}%</b>\n"
-                        text += f"{desc[:100]}...\n"
-                        text += f"<code>{address}</code>\n"
-                        if tg:
-                            text += f"<a href='{tg}'>🔗 Telegram Channel</a>\n"
-                        if image:
-                            text += f"<a href='{image}'>🖼 Image</a>\n"
+                        mcap = f"${int(cap)/1e3:.1f}K" if cap else "N/A"
+                        growth = f"{float(change):.2f}%" if change else "N/A"
 
-                        result.append(text)
+                        result.append(f"{name} ({symbol}) | {mcap} | {growth}")
 
                     if not result:
                         result.append("Нет токенов в ответе от BigPump.")
-                    return result
+                    return ["\n".join(result)]
                 else:
                     return [f"Ошибка {response.status}: {text}"]
     except Exception as e:
@@ -74,7 +61,7 @@ async def tokens_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text("Получаю токены с BigPump...")
     tokens = await get_tokens()
     for t in tokens:
-        await update.message.reply_text(t, parse_mode=ParseMode.HTML, disable_web_page_preview=False)
+        await update.message.reply_text(t, parse_mode=ParseMode.HTML, disable_web_page_preview=True)
 
 # Основной запуск бота
 if __name__ == '__main__':
