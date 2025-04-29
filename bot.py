@@ -162,7 +162,7 @@ async def refresh_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     try:
         if tokens == query.message.text_html:
-            await query.answer("Актуально 👍", show_alert=False)
+            await query.answer("Актуально ✅", show_alert=False)
             return
 
         if len(tokens) > 4000:
