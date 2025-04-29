@@ -2,10 +2,10 @@ import logging
 import os
 import aiohttp
 import base64
+import crcmod
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.constants import ParseMode
 from telegram.ext import ApplicationBuilder, CommandHandler, ContextTypes, CallbackQueryHandler
-from tonsdk.utils import Address
 
 BOT_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN")
 if not BOT_TOKEN:
@@ -21,8 +21,20 @@ REFERRAL_PREFIX = "prghZZEt-"
 
 last_valid_tokens = "Нет подходящих токенов"
 
-def address_to_user_friendly(address: str) -> str:
-    return Address(address).to_string(is_user_friendly=True, is_bounceable=True, is_test_only=False, url_safe=True)
+def address_to_base64url(address: str) -> str:
+    wc_str, hex_addr = address.split(":")
+    wc = int(wc_str)
+    addr_bytes = bytes.fromhex(hex_addr)
+
+    tag = 0x11  # bounceable = 1, testnet = 0
+    workchain_byte = wc.to_bytes(1, byteorder="big", signed=True)
+    data = bytes([tag]) + workchain_byte + addr_bytes
+
+    crc16 = crcmod.predefined.mkPredefinedCrcFun('crc-ccitt-false')
+    checksum = crc16(data).to_bytes(2, 'big')
+
+    full_data = data + checksum
+    return base64.urlsafe_b64encode(full_data).rstrip(b'=').decode()
 
 async def get_ton_price():
     url = 'https://api.coingecko.com/api/v3/simple/price?ids=the-open-network&vs_currencies=usd'
@@ -82,7 +94,7 @@ async def get_tokens():
                         if address:
                             try:
                                 logger.info(f"Кодирую адрес: {address}")
-                                encoded_address = address_to_user_friendly(address)
+                                encoded_address = address_to_base64url(address)
                                 logger.info(f"Получен EQ адрес: {encoded_address}")
                                 link = f"https://t.me/tontrade?start={REFERRAL_PREFIX}{encoded_address}"
                                 name_symbol = f'<a href="{link}">{name} ({symbol})</a>'
@@ -124,7 +136,7 @@ async def get_tokens():
         logger.exception("Ошибка при обращении к BigPump API")
         return None
 
-async def tokens_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+async def listings_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     global last_valid_tokens
     tokens = await get_tokens()
     if tokens:
@@ -166,12 +178,11 @@ async def refresh_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
         )
     except Exception as e:
         logger.exception(f"Ошибка при обновлении сообщения: {e}")
-        # Ничего не выводим в чат при ошибке, чтобы не раздражать пользователя
         pass
 
 if __name__ == '__main__':
     app = ApplicationBuilder().token(BOT_TOKEN).build()
-    app.add_handler(CommandHandler("tokens", tokens_command))
+    app.add_handler(CommandHandler("listings", listings_command))
     app.add_handler(CallbackQueryHandler(refresh_callback, pattern="refresh_tokens"))
     print("Бот запущен...")
     app.run_polling()
