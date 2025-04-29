@@ -2,6 +2,7 @@ import logging
 import os
 import aiohttp
 from telegram import Update
+from telegram.constants import ParseMode
 from telegram.ext import ApplicationBuilder, CommandHandler, ContextTypes
 
 # Получаем токен из переменных окружения
@@ -36,15 +37,29 @@ async def get_tokens():
                     tokens = data.get('coins', [])
                     result = []
                     for token in tokens:
-                        logger.info(f"Parsed token: {token}")
                         name = token.get('name')
                         symbol = token.get('symbol')
                         address = token.get('address')
-                        chain = 'TON'  # по умолчанию, так как поле отсутствует
-                        if not all([name, symbol, address]):
-                            result.append(f"⚠️ Неполные данные: {token}")
-                        else:
-                            result.append(f"{name} ({symbol})\nChain: {chain}\nAddress: {address}\n")
+                        desc = token.get('description') or "Без описания"
+                        image = token.get('imageUrl')
+                        cap = token.get('marketCap')
+                        change = token.get('priceChange1H')
+                        tg = token.get('tgChannel')
+
+                        text = f"<b>{name}</b> ({symbol})\n"
+                        if cap:
+                            text += f"Market Cap: <b>${int(cap)/1e6:.1f}M</b>\n"
+                        if change:
+                            text += f"📈 Growth (1h): <b>{float(change):.2f}%</b>\n"
+                        text += f"{desc[:100]}...\n"
+                        text += f"<code>{address}</code>\n"
+                        if tg:
+                            text += f"<a href='{tg}'>🔗 Telegram Channel</a>\n"
+                        if image:
+                            text += f"<a href='{image}'>🖼 Image</a>\n"
+
+                        result.append(text)
+
                     if not result:
                         result.append("Нет токенов в ответе от BigPump.")
                     return result
@@ -59,7 +74,7 @@ async def tokens_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text("Получаю токены с BigPump...")
     tokens = await get_tokens()
     for t in tokens:
-        await update.message.reply_text(t)
+        await update.message.reply_text(t, parse_mode=ParseMode.HTML, disable_web_page_preview=False)
 
 # Основной запуск бота
 if __name__ == '__main__':
