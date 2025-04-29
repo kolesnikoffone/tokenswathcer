@@ -55,7 +55,6 @@ async def get_tokens():
     url = 'https://prod-api.bigpump.app/api/v1/coins?sortType=pocketfi&limit=30'
     headers = {
         'accept': '*/*',
-        'accept-language': 'en-US,en;q=0.9,ru-RU;q=0.8,ru;q=0.7',
         'authorization': 'Bearer eyJhbGciOiJIUzI1NiJ9.eyJhZGRyZXNzIjoiMDpmNWI5MWRkZDBiOWM4N2VmNjUwMTFhNzlmMWRhNzE5NzIwYzVhODgwN2I1NGMxYTQwNTIyNzRmYTllMzc5YmNkIiwibmV0d29yayI6Ii0yMzkiLCJpYXQiOjE3NDI4MDY4NTMsImV4cCI6MTc3NDM2NDQ1M30.U_GaaX5psI572w4YmwAjlh8u4uFBVHdsD-zJacvWiPo',
         'origin': 'https://bigpump.app',
         'referer': 'https://bigpump.app/',
@@ -83,16 +82,20 @@ async def get_tokens():
                     for idx, (token, cap) in enumerate(filtered[:15], 1):
                         name = token.get('name', 'N/A')
                         symbol = token.get('symbol', 'N/A')
-                        address = token.get('masterAddress') or token.get('address')
+                        address = token.get('masterAddress')
                         change = token.get('priceChange1H')
 
                         mcap = f"<b>${cap/1000:.1f}K</b>" if cap >= 1_000 else f"<b>${cap:.2f}</b>"
 
-                        if address:
+                        if not address:
+                            continue
+
+                        try:
                             encoded_address = address_to_base64url(address)
                             link = f"https://t.me/tontrade?start={REFERRAL_PREFIX}{encoded_address}"
                             name_symbol = f'<a href="{link}">{name} ({symbol})</a>'
-                        else:
+                        except Exception as e:
+                            logger.warning(f"Ошибка при кодировании адреса {address}: {e}")
                             name_symbol = f'{name} ({symbol})'
 
                         emoji = ""
