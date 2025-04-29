@@ -1,4 +1,4 @@
-""import asyncio
+import asyncio
 import logging
 import httpx
 import base64
@@ -32,6 +32,7 @@ def address_to_base64url(address: str) -> str:
 
 async def fetch_bigpump_data():
     headers = {
+        'Authorization': 'Bearer eyJhbGciOiJIUzI1NiJ9.eyJhZGRyZXNzIjoiMDpmNWI5MWRkZDBiOWM4N2VmNjUwMTFhNzlmMWRhNzE5NzIwYzVhODgwN2I1NGMxYTQwNTIyNzRmYTllMzc5YmNkIiwibmV0d29yayI6Ii0yMzkiLCJpYXQiOjE3NDI4MDY4NTMsImV4cCI6MTc3NDM2NDQ1M30.U_GaaX5psI572w4YmwAjlh8u4uFBVHdsD-zJacvWiPo',
         'Origin': 'https://bigpump.app',
         'Referer': 'https://bigpump.app/',
         'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/112.0.0.0 Safari/537.36',
