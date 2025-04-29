@@ -25,11 +25,12 @@ def address_to_base64url(address: str) -> str:
     wc, hex_part = address.split(":")
     wc = int(wc)
     addr_bytes = bytes.fromhex(hex_part)
-    tag = 0x11  # Corrected: bounceable, non-testnet
-    full = bytes([tag]) + struct.pack("b", wc) + addr_bytes
+    tag = 0x11  # bounceable, non-testnet
+    workchain_byte = wc.to_bytes(1, byteorder="big", signed=True)
+    data = bytes([tag]) + workchain_byte + addr_bytes
     crc16 = crcmod.predefined.mkPredefinedCrcFun('crc-ccitt-false')
-    checksum = crc16(full).to_bytes(2, 'big')
-    return base64.urlsafe_b64encode(full + checksum).rstrip(b'=').decode()
+    checksum = crc16(data).to_bytes(2, 'big')
+    return base64.urlsafe_b64encode(data + checksum).rstrip(b'=').decode()
 
 async def get_ton_price():
     url = 'https://api.coingecko.com/api/v3/simple/price?ids=the-open-network&vs_currencies=usd'
@@ -46,7 +47,7 @@ async def get_ton_price():
 async def get_tokens():
     url = 'https://prod-api.bigpump.app/api/v1/coins?sortType=pocketfi&limit=30'
     headers = {
-        'authorization': 'Bearer eyJhbGciOiJIUzI1NiJ9.eyJhZGRyZXNzIjoiMDpmNWI5MWRkZDBiOWM4N2VmNjUwMTFhNzlmMWRhNzE5NzIwYzVhODgwN2I1NGMxYTQwNTIyNzRmYTllMzc5YmNkIiwibmV0d29yayI6Ii0yMzkiLCJpYXQiOjE3NDI4MDY4NTMsImV4cCI6MTc3NDM2NDQ1M30.U_GaaX5psI572w4YmwAjlh8u4uFBVHdsD-zJacvWiPo',
+        'authorization': 'Bearer eyJhbGciOiJIUzI1NiJ9.eyJhZGRyZXNzIjoiMDpmNWI5MWRkZDBiOWM4N2VmNjUwMTFhNzlmMWRhNzE5NzIwYzVhODgwN2I1NGMxYTQwNTIyNzRmYTllMzc5YmNkIiwibmV0d29yayI6Ii0yMzkiLCJpYXQiOjE3NDI4MDY4NTMsImV4cCI6MTc3NDM2NDQ1M30.U_GaaX5psI572w4yMwAjlh8u4uFBVHdsD-zJacvWiPo',
         'accept': '*/*',
         'origin': 'https://bigpump.app',
         'referer': 'https://bigpump.app/',
