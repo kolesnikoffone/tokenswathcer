@@ -12,7 +12,7 @@ if not BOT_TOKEN:
     raise ValueError("Переменная окружения TELEGRAM_BOT_TOKEN не установлена")
 
 BIGPUMP_API_URL = 'https://prod-api.bigpump.app/api/v1/coins?sortType=pocketfi&limit=30'
-TON_API_URL = 'https://api.ton.sh/rates'
+TON_API_URL = 'https://api.coingecko.com/api/v3/simple/price?ids=the-open-network&vs_currencies=usd'
 REFERRAL_PREFIX = 'prghZZEt-'
 
 logging.basicConfig(level=logging.INFO)
@@ -46,8 +46,8 @@ async def fetch_ton_price():
     async with httpx.AsyncClient() as client:
         response = await client.get(TON_API_URL)
         response.raise_for_status()
-        data = response.json()
-        return float(data["rates"]["TON"]["prices"]["USD"])
+        data = await response.json()
+        return float(data["the-open-network"]["usd"])
 
 async def tokens_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     try:
