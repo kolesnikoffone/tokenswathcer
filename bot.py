@@ -39,16 +39,17 @@ async def get_tokens():
                     for token in tokens:
                         name = token.get('name')
                         symbol = token.get('symbol')
-                        ton_price = float(token.get('liqCurrentUsdPrice') or 0)
-                        cap_ton = float(token.get('tonLiqCollected') or 0) / 1e9  # Convert from nanotons to TON
-                        cap = cap_ton * ton_price if ton_price and cap_ton else None
-                        change = token.get('priceChange1H')
 
-                        if cap:
+                        # Расчет капы на основе liqCurrentUsdPrice * tonLiqCollected / 1e9
+                        try:
+                            ton_price = float(token.get('liqCurrentUsdPrice') or 0)
+                            cap_ton = float(token.get('tonLiqCollected') or 0) / 1e9
+                            cap = ton_price * cap_ton
                             mcap = f"${cap / 1e6:.1f}M" if cap >= 1e6 else f"${cap / 1e3:.1f}K"
-                        else:
+                        except:
                             mcap = "N/A"
 
+                        change = token.get('priceChange1H')
                         growth = f"{float(change):.2f}%" if change else "N/A"
 
                         result.append(f"{name} ({symbol}) | {mcap} | {growth}")
