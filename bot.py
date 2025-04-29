@@ -17,15 +17,15 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
-# Функция запроса цены TON
+# Функция запроса цены TON с CoinGecko
 async def get_ton_price():
-    url = 'https://api.tonapi.io/v1/rates'
+    url = 'https://api.coingecko.com/api/v3/simple/price?ids=the-open-network&vs_currencies=usd'
     try:
         async with aiohttp.ClientSession() as session:
             async with session.get(url) as response:
                 if response.status == 200:
                     data = await response.json()
-                    return float(data["rates"]["TON"]["prices"]["USD"])
+                    return float(data["the-open-network"]["usd"])
     except Exception as e:
         logger.warning(f"Не удалось получить цену TON: {e}")
     return 0
