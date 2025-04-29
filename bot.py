@@ -1,4 +1,4 @@
-import logging
+""import logging
 import os
 import aiohttp
 from telegram import Update
@@ -60,8 +60,10 @@ async def get_tokens():
 
                         try:
                             market_cap_raw = token.get('marketCap') or "0"
-                            cap = float(market_cap_raw) * ton_usd_price / 1e9
-                        except:
+                            logger.info(f"Token: {name}, MarketCap: {market_cap_raw}, TON price: {ton_usd_price}")
+                            cap = float(market_cap_raw) * ton_usd_price / 1e9 if ton_usd_price > 0 else 0
+                        except Exception as e:
+                            logger.warning(f"Ошибка при расчете капитализации для {name}: {e}")
                             cap = 0
 
                         if cap > 0:
