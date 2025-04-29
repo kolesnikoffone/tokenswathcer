@@ -40,21 +40,13 @@ async def get_tokens():
                         name = token.get('name')
                         symbol = token.get('symbol')
 
-                        # Расчет капы: сначала пытаемся по liqCurrentUsdPrice * tonLiqCollected / 1e9
-                        cap = None
+                        # Используем liqUsdMarketCap напрямую
                         try:
-                            ton_price = float(token.get('liqCurrentUsdPrice') or 0)
-                            cap_ton = float(token.get('tonLiqCollected') or 0) / 1e9
-                            cap = ton_price * cap_ton
-                            if cap == 0:
-                                raise ValueError("Zero cap fallback")
+                            cap = float(token.get('liqUsdMarketCap') or 0)
                         except:
-                            try:
-                                cap = float(token.get('marketCap') or 0)
-                            except:
-                                cap = None
+                            cap = 0
 
-                        if cap:
+                        if cap > 0:
                             mcap = f"${cap / 1e6:.1f}M" if cap >= 1e6 else f"${cap / 1e3:.1f}K"
                         else:
                             mcap = "N/A"
