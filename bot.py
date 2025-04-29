@@ -90,7 +90,34 @@ async def send_tokens(chat_id, message_id=None):
             else:
                 clickable_name = f'{name} ({symbol})'
 
-            line = f"{idx}. {clickable_name} | {mcap_str} | {growth}%\n{chr(8212) * 35}"
+            emoji = ""
+            if growth != "N/A":
+                try:
+                    growth_value = float(growth)
+                    if growth_value >= 100:
+                        emoji = "💎"
+                    elif growth_value >= 50:
+                        emoji = "🤑"
+                    elif growth_value >= 25:
+                        emoji = "💸"
+                    elif growth_value >= 10:
+                        emoji = "💪"
+                    elif growth_value >= 5:
+                        emoji = "🙃"
+                    elif growth_value > 0:
+                        emoji = "🥹"
+                    elif growth_value > -10:
+                        emoji = "🥲"
+                    elif growth_value > -25:
+                        emoji = "😭"
+                    else:
+                        emoji = "🤡"
+                except ValueError:
+                    pass
+
+            growth_str = f"{emoji} {growth}%" if growth != "N/A" else "N/A"
+
+            line = f"{idx}. {clickable_name} | {mcap_str} | {growth_str}\n{chr(8212) * 35}"
             result.append(line)
 
         if result and result[-1].endswith(chr(8212) * 35):
