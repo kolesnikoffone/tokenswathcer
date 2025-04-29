@@ -2,6 +2,8 @@ import logging
 import os
 import aiohttp
 import base64
+import crcmod
+import struct
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.constants import ParseMode
 from telegram.ext import ApplicationBuilder, CommandHandler, CallbackQueryHandler, ContextTypes
@@ -20,20 +22,14 @@ REFERRAL_PREFIX = "prghZZEt-"
 
 def address_to_base64url(address: str) -> str:
     address = address.strip()
-    if ':' in address:
-        wc, hex_addr = address.split(':')
-        wc = int(wc)
-        hex_addr = bytes.fromhex(hex_addr)
-        full_addr = bytes([wc & 0xff]) + hex_addr
-    else:
-        full_addr = bytes.fromhex(address)
-    # Add CRC16 checksum as required for TON URLs
-    import crcmod
+    wc, hex_part = address.split(":")
+    wc = int(wc)
+    addr_bytes = bytes.fromhex(hex_part)
+    tag = 0x51  # bounceable, not testnet
+    full = bytes([tag]) + struct.pack("b", wc) + addr_bytes
     crc16 = crcmod.predefined.mkPredefinedCrcFun('crc-ccitt-false')
-    checksum = crc16(full_addr).to_bytes(2, 'big')
-    full_with_crc = full_addr + checksum
-    return base64.urlsafe_b64encode(full_with_crc).rstrip(b'=').decode('utf-8')
-
+    checksum = crc16(full).to_bytes(2, 'big')
+    return base64.urlsafe_b64encode(full + checksum).rstrip(b'=').decode()
 
 async def get_ton_price():
     url = 'https://api.coingecko.com/api/v3/simple/price?ids=the-open-network&vs_currencies=usd'
@@ -46,7 +42,6 @@ async def get_ton_price():
     except Exception as e:
         logger.warning(f"Не удалось получить цену TON: {e}")
     return 0
-
 
 async def get_tokens():
     url = 'https://prod-api.bigpump.app/api/v1/coins?sortType=pocketfi&limit=30'
