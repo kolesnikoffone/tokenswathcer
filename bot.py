@@ -83,10 +83,19 @@ async def get_tokens():
                         except:
                             continue
 
+                    if not filtered:
+                        logger.warning("Все токены отфильтрованы. Показываю только capitalizations:")
+                        for token in tokens:
+                            try:
+                                mc = float(token.get("marketCap", 0))
+                                logger.warning(f"{token.get('symbol')}: {mc}")
+                            except Exception as e:
+                                logger.warning(f"{token.get('symbol')} — ошибка при парсинге marketCap: {e}")
+
                     for idx, (token, cap) in enumerate(filtered[:15], 1):
                         name = token.get('name', 'N/A')
                         symbol = token.get('symbol', 'N/A')
-                        address = token.get('routerJettonWalletAddress') or token.get('masterAddress') or token.get('address')
+                        address = token.get('masterAddress') or token.get('address')
                         change = token.get('priceChange1H')
 
                         mcap = f"<b>${cap/1000:.1f}K</b>" if cap >= 1_000 else f"<b>${cap:.2f}</b>"
