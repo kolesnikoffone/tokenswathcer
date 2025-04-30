@@ -1,8 +1,7 @@
 import logging
 import os
 import aiohttp
-import base64
-import crcmod
+from pytoniq_core import Address
 from telegram import InlineKeyboardButton, InlineKeyboardMarkup, Update
 from telegram.constants import ParseMode
 from telegram.ext import ApplicationBuilder, CommandHandler, CallbackQueryHandler, ContextTypes
@@ -21,28 +20,12 @@ REFERRAL_PREFIX = "prghZZEt-"
 latest_tokens_result = None
 
 def address_to_base64url(address: str) -> str:
-    address = address.strip()
-    original_address = address  # лог
-
-    if ':' in address:
-        wc_str, hex_addr = address.split(':')
-        wc = int(wc_str)
-        addr_bytes = bytes.fromhex(hex_addr)
-    else:
-        wc = 0
-        addr_bytes = bytes.fromhex(address)
-
-    tag = 0x11
-    wc_byte = wc.to_bytes(1, byteorder="big", signed=True)
-    data = bytes([tag]) + wc_byte + addr_bytes
-
-    crc16 = crcmod.predefined.mkPredefinedCrcFun('crc-ccitt-false')
-    checksum = crc16(data).to_bytes(2, 'big')
-    full = data + checksum
-
-    b64 = base64.urlsafe_b64encode(full).decode().rstrip("=")
-    logger.info(f"Address conversion: {original_address} -> {b64}")
-    return b64
+    return Address(address).to_str(
+        is_user_friendly=True,
+        is_bounceable=True,
+        is_test_only=False,
+        is_url_safe=True
+    )
 
 async def get_ton_price():
     url = 'https://api.coingecko.com/api/v3/simple/price?ids=the-open-network&vs_currencies=usd&include_24hr_change=true'
@@ -96,9 +79,14 @@ async def get_tokens():
                         mcap = f"<b>${cap/1000:.1f}K</b>" if cap >= 1_000 else f"<b>${cap:.2f}</b>"
 
                         if address:
-                            encoded_address = address_to_base64url(address)
-                            link = f"https://t.me/tontrade?start={REFERRAL_PREFIX}{encoded_address}"
-                            name_symbol = f'<a href="{link}">{name} ({symbol})</a>'
+                            try:
+                                encoded_address = address_to_base64url(address)
+                                logger.info(f"Address conversion: {address} -> {encoded_address}")
+                                link = f"https://t.me/tontrade?start={REFERRAL_PREFIX}{encoded_address}"
+                                name_symbol = f'<a href="{link}">{name} ({symbol})</a>'
+                            except Exception as e:
+                                logger.warning(f"Ошибка при конвертации адреса: {e}")
+                                name_symbol = f'{name} ({symbol})'
                         else:
                             name_symbol = f'{name} ({symbol})'
 
@@ -130,7 +118,7 @@ async def get_tokens():
                         line = f"{idx}. {name_symbol} | {mcap} | {growth_str}"
                         result.append(line)
 
-                    return "\n\n".join(result) if result else "Нет подходящих токенов"
+                    return "\n\n".join(result) if result else None
                 else:
                     return f"Ошибка {response.status}"
     except Exception as e:
@@ -141,16 +129,14 @@ async def listings_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     global latest_tokens_result
     result = await get_tokens()
     if result:
-        if result != latest_tokens_result:
-            latest_tokens_result = result
-        keyboard = InlineKeyboardMarkup([
-            [InlineKeyboardButton("🔄 Обновить", callback_data="refresh")]
-        ])
-        await update.message.reply_text(result, parse_mode=ParseMode.HTML, disable_web_page_preview=True, reply_markup=keyboard)
-    elif latest_tokens_result:
-        await update.message.reply_text(latest_tokens_result, parse_mode=ParseMode.HTML, disable_web_page_preview=True)
+        latest_tokens_result = result
     else:
-        await update.message.reply_text("Нет подходящих токенов 😕")
+        result = latest_tokens_result or "Нет подходящих токенов"
+
+    keyboard = InlineKeyboardMarkup([
+        [InlineKeyboardButton("🔄 Обновить", callback_data="refresh")]
+    ])
+    await update.message.reply_text(result, parse_mode=ParseMode.HTML, disable_web_page_preview=True, reply_markup=keyboard)
 
 async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
     global latest_tokens_result
