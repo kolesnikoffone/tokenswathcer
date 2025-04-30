@@ -8,8 +8,11 @@ from telegram.constants import ParseMode
 from telegram.ext import ApplicationBuilder, CommandHandler, CallbackQueryHandler, ContextTypes
 
 BOT_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN")
+TONAPI_KEY = os.getenv("TONAPI_API_KEY")
 if not BOT_TOKEN:
     raise ValueError("Переменная окружения TELEGRAM_BOT_TOKEN не установлена")
+if not TONAPI_KEY:
+    raise ValueError("Переменная окружения TONAPI_API_KEY не установлена")
 
 logging.basicConfig(
     format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
@@ -19,6 +22,21 @@ logger = logging.getLogger(__name__)
 
 REFERRAL_PREFIX = "prghZZEt-"
 latest_tokens_result = None
+
+async def contract_to_friendly(address: str) -> str:
+    url = f"https://tonapi.io/v2/accounts/{address}"
+    headers = {
+        "Authorization": f"Bearer {TONAPI_KEY}"
+    }
+    try:
+        async with aiohttp.ClientSession() as session:
+            async with session.get(url, headers=headers) as resp:
+                if resp.status == 200:
+                    data = await resp.json()
+                    return data.get("address", address)
+    except Exception as e:
+        logger.warning(f"TONAPI error for {address}: {e}")
+    return address
 
 def address_to_base64url(address: str) -> str:
     address = address.strip()
@@ -54,88 +72,79 @@ async def get_ton_price():
     return None, 0
 
 async def get_tokens():
-    bigpump_url = 'https://prod-api.bigpump.app/api/v1/coins?sortType=pocketfi&limit=30'
-    dyor_url = 'https://api.dyor.io/v1/jettons?sort=createdAt&order=desc&limit=200&excludeScam=true'
+    url = 'https://prod-api.bigpump.app/api/v1/coins?sortType=pocketfi&limit=30'
     headers = {
         'accept': '*/*',
-        'accept-language': 'en-US,en;q=0.9,ru-RU;q=0.8,ru;q=0.7',
         'authorization': 'Bearer eyJhbGciOiJIUzI1NiJ9.eyJhZGRyZXNzIjoiMDpmNWI5MWRkZDBiOWM4N2VmNjUwMTFhNzlmMWRhNzE5NzIwYzVhODgwN2I1NGMxYTQwNTIyNzRmYTllMzc5YmNkIiwibmV0d29yayI6Ii0yMzkiLCJpYXQiOjE3NDI4MDY4NTMsImV4cCI6MTc3NDM2NDQ1M30.U_GaaX5psI572w4YmwAjlh8u4uFBVHdsD-zJacvWiPo',
-        'origin': 'https://bigpump.app',
-        'referer': 'https://bigpump.app/',
-        'user-agent': 'Mozilla/5.0'
     }
     try:
         async with aiohttp.ClientSession() as session:
-            async with session.get(bigpump_url, headers=headers) as bp_resp:
-                if bp_resp.status != 200:
-                    logger.warning(f"BigPump API error: {bp_resp.status}")
-                    return "BigPump API не отвечает"
+            async with session.get(url, headers=headers) as response:
+                logger.info(f"BigPump API responded with status {response.status}")
+                if response.status == 200:
+                    data = await response.json()
+                    tokens = data.get('coins', [])
+                    ton_usd_price, _ = await get_ton_price()
+                    result = []
 
-                bp_data = await bp_resp.json()
-                bp_tokens = bp_data.get("coins", [])
+                    filtered = []
+                    for token in tokens:
+                        try:
+                            cap = float(token.get("marketCap", 0)) * ton_usd_price / 1e9
+                            if cap >= 11000:
+                                filtered.append((token, cap))
+                        except:
+                            continue
 
-            async with session.get(dyor_url) as dyor_resp:
-                if dyor_resp.status != 200:
-                    logger.warning(f"DYOR API error: {dyor_resp.status}")
-                    return "DYOR API не отвечает"
+                    for idx, (token, cap) in enumerate(filtered[:15], 1):
+                        name = token.get('name', 'N/A')
+                        symbol = token.get('symbol', 'N/A')
+                        raw_address = token.get('address')
+                        change = token.get('priceChange1H')
 
-                dyor_data = await dyor_resp.json()
-                dyor_tokens = dyor_data.get("jettons", [])
+                        mcap = f"<b>${cap/1000:.1f}K</b>" if cap >= 1_000 else f"<b>${cap:.2f}</b>"
 
-        symbol_to_address = {
-            j["metadata"]["symbol"].strip(): j["metadata"]["address"]
-            for j in dyor_tokens
-            if j.get("metadata", {}).get("symbol") and j["metadata"].get("address")
-        }
+                        if raw_address:
+                            friendly = await contract_to_friendly(raw_address)
+                            encoded_address = friendly.replace("=", "")
+                            link = f"https://t.me/tontrade?start={REFERRAL_PREFIX}{encoded_address}"
+                            name_symbol = f'<a href="{link}">{name} ({symbol})</a>'
+                        else:
+                            name_symbol = f'{name} ({symbol})'
 
-        ton_usd_price, _ = await get_ton_price()
-        result = []
-        filtered = []
-        for token in bp_tokens:
-            try:
-                cap = float(token.get("marketCap", 0)) * ton_usd_price / 1e9
-                if cap >= 11000:
-                    filtered.append((token, cap))
-            except:
-                continue
+                        emoji = ""
+                        try:
+                            growth = float(change)
+                            if growth >= 100:
+                                emoji = "💎"
+                            elif growth >= 50:
+                                emoji = "🤑"
+                            elif growth >= 25:
+                                emoji = "💸"
+                            elif growth >= 10:
+                                emoji = "💪"
+                            elif growth >= 5:
+                                emoji = "🙃"
+                            elif growth > 0:
+                                emoji = "🥹"
+                            elif growth > -10:
+                                emoji = "🥲"
+                            elif growth > -25:
+                                emoji = "😭"
+                            else:
+                                emoji = "🤡"
+                            growth_str = f"{emoji} {growth:.2f}%"
+                        except:
+                            growth_str = "N/A"
 
-        for idx, (token, cap) in enumerate(filtered[:15], 1):
-            name = token.get('name', 'N/A')
-            symbol = token.get('symbol', 'N/A')
-            change = token.get('priceChange1H')
-            address = symbol_to_address.get(symbol)
+                        line = f"{idx}. {name_symbol} | {mcap} | {growth_str}"
+                        result.append(line)
 
-            mcap = f"<b>${cap/1000:.1f}K</b>" if cap >= 1_000 else f"<b>${cap:.2f}</b>"
-
-            if address:
-                encoded = address_to_base64url(address)
-                link = f"https://t.me/tontrade?start={REFERRAL_PREFIX}{encoded}"
-                name_symbol = f'<a href="{link}">{name} ({symbol})</a>'
-            else:
-                name_symbol = f'{name} ({symbol})'
-
-            try:
-                growth = float(change)
-                emoji = (
-                    "💎" if growth >= 100 else
-                    "🤑" if growth >= 50 else
-                    "💸" if growth >= 25 else
-                    "💪" if growth >= 10 else
-                    "🙃" if growth >= 5 else
-                    "🥹" if growth > 0 else
-                    "🥲" if growth > -10 else
-                    "😭" if growth > -25 else "🤡"
-                )
-                growth_str = f"{emoji} {growth:.2f}%"
-            except:
-                growth_str = "N/A"
-
-            result.append(f"{idx}. {name_symbol} | {mcap} | {growth_str}")
-
-        return "\n\n".join(result) if result else "Нет подходящих токенов"
-
+                    return "\n\n".join(result) if result else "Нет подходящих токенов"
+                else:
+                    return f"Ошибка {response.status}"
     except Exception as e:
-        logger.exception("Ошибка при обращении к API")
+        logger.exception("Ошибка при обращении к BigPump API")
         return f"Ошибка при запросе: {str(e)}"
 
 async def listings_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
