@@ -20,7 +20,6 @@ logger = logging.getLogger(__name__)
 REFERRAL_PREFIX = "prghZZEt-"
 latest_tokens_result = None
 
-
 def address_to_base64url(address: str) -> str:
     address = address.strip()
     if ':' in address:
@@ -40,7 +39,6 @@ def address_to_base64url(address: str) -> str:
     full = data + checksum
     return base64.urlsafe_b64encode(full).decode()  # НЕ удаляем padding
 
-
 async def get_ton_price():
     url = 'https://api.coingecko.com/api/v3/simple/price?ids=the-open-network&vs_currencies=usd'
     try:
@@ -52,7 +50,6 @@ async def get_ton_price():
     except Exception as e:
         logger.warning(f"Не удалось получить цену TON: {e}")
     return 0
-
 
 async def get_tokens():
     url = 'https://prod-api.bigpump.app/api/v1/coins?sortType=pocketfi&limit=30'
@@ -133,7 +130,6 @@ async def get_tokens():
         logger.exception("Ошибка при обращении к BigPump API")
         return f"Ошибка при запросе: {str(e)}"
 
-
 async def listings_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     global latest_tokens_result
     result = await get_tokens()
@@ -143,7 +139,6 @@ async def listings_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
             [InlineKeyboardButton("🔄 Обновить", callback_data="refresh")]
         ])
         await update.message.reply_text(result, parse_mode=ParseMode.HTML, disable_web_page_preview=True, reply_markup=keyboard)
-
 
 async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
     global latest_tokens_result
@@ -159,7 +154,6 @@ async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
             await query.edit_message_text(text=result, parse_mode=ParseMode.HTML, disable_web_page_preview=True, reply_markup=keyboard)
         except Exception as e:
             logger.warning(f"Не удалось обновить сообщение: {e}")
-
 
 if __name__ == '__main__':
     app = ApplicationBuilder().token(BOT_TOKEN).build()
