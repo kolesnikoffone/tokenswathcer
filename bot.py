@@ -19,6 +19,7 @@ logger = logging.getLogger(__name__)
 
 REFERRAL_PREFIX = "prghZZEt-"
 latest_tokens_result = {"pages": [], "timestamp": "", "last_page": 0}
+latest_price_result = None
 
 def address_to_base64url(address: str) -> str:
     return Address(address).to_str(
@@ -206,26 +207,15 @@ async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
         logger.warning(f"Не удалось обновить сообщение: {e}")
 
 async def tonprice_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    global latest_price_result
     price, change = await get_ton_price()
     if price is not None:
-        if change >= 5:
-            emoji = "🚀"
-        elif change >= 1:
-            emoji = "📈"
-        elif change > 0:
-            emoji = "🔼"
-        elif change > -1:
-            emoji = "🔽"
-        elif change > -5:
-            emoji = "📉"
-        else:
-            emoji = "💥"
-
-        message = f"{emoji} <b>TON:</b> ${price:.4f} ({change:+.2f}%)"
+        new_message = f"{('🚀' if change >= 5 else '📈' if change >= 1 else '🔼' if change > 0 else '🔽' if change > -1 else '📉' if change > -5 else '💥')} <b>TON:</b> ${price:.4f} ({change:+.2f}%)"
+        if latest_price_result != new_message:
+            latest_price_result = new_message
+            await update.message.reply_text(new_message, parse_mode=ParseMode.HTML, disable_web_page_preview=True)
     else:
-        message = "Не удалось получить цену TON 😕"
-
-    await update.message.reply_text(message, parse_mode=ParseMode.HTML, disable_web_page_preview=True)
+        await update.message.reply_text("Не удалось получить цену TON 😕", parse_mode=ParseMode.HTML, disable_web_page_preview=True)
 
 if __name__ == '__main__':
     app = ApplicationBuilder().token(BOT_TOKEN).build()
