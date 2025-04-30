@@ -47,7 +47,7 @@ async def get_tokens():
     headers = {
         'accept': '*/*',
         'accept-language': 'en-US,en;q=0.9,ru-RU;q=0.8,ru;q=0.7',
-        'authorization': 'Bearer eyJhbGciOiJIUzI1NiJ9.eyJhZGRyZXNzIjoiMDpmNWI5MWRkZDBiOWM4N2VmNjUwMTFhNzlmMWRhNzE5NzIwYzVhODgwN2I1NGMxYTQwNTIyNzRmYTllMzc5YmNkIiwibmV0d29yayI6Ii0yMzkiLCJpYXQiOjE3NDI4MDY4NTMsImV4cCI6MTc3NDM2NDQ1M30.U_GaaX5psI572w4YmwAjlh8u4uFBVHdsD-zJacvWiPo',
+        'authorization': 'Bearer eyJhbGciOiJIUzI1NiJ9.eyJhZGRyZXNzIjoiMDpmNWI5...'
         'origin': 'https://bigpump.app',
         'referer': 'https://bigpump.app/',
         'user-agent': 'Mozilla/5.0'
@@ -104,6 +104,8 @@ async def get_tokens():
                                     emoji = "📈"
                                 elif growth > 0:
                                     emoji = "🥹"
+                                elif growth > -1:
+                                    emoji = "0️⃣"
                                 elif growth > -5:
                                     emoji = "📉"
                                 elif growth > -10:
@@ -114,8 +116,7 @@ async def get_tokens():
                                     emoji = "🤡"
                                 growth_str = f"{emoji} {growth:.2f}%"
                             except:
-                                emoji = "0️⃣"
-                                growth_str = f"{emoji} 0.00%"
+                                growth_str = "0️⃣ 0.00%"
 
                             line = f"{idx}. {name_symbol} | {mcap} | {growth_str}"
                             result.append(line)
@@ -214,13 +215,15 @@ async def tonprice_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         elif change > 0:
             emoji = "🔼"
         elif change > -1:
-            emoji = "🔽"
+            emoji = "0️⃣"
         elif change > -5:
             emoji = "📉"
         else:
             emoji = "💥"
 
-        message = f"{emoji} <b>TON:</b> ${price:.4f} ({change:+.2f}%)"
+        message = (
+            f"{emoji} <b>TON:</b> ${price:.4f} ({change:+.2f}%)"
+        )
     else:
         message = "Не удалось получить цену TON 😕"
 
