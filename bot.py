@@ -36,7 +36,7 @@ async def get_ton_price():
                 if response.status == 200:
                     data = await response.json()
                     price = float(data["the-open-network"]["usd"])
-                    change = float(data["the-open-network"].get("usd_24h_change", 0))
+                    change = float(data["the-open-network"].get("usd_24hr_change", 0))
                     return price, change
     except Exception as e:
         logger.warning(f"Не удалось получить цену TON: {e}")
@@ -104,7 +104,7 @@ async def get_tokens():
                                     emoji = "📈"
                                 elif growth > 0:
                                     emoji = "🥹"
-                                elif growth >= -1:
+                                elif growth > -1:
                                     emoji = "0️⃣"
                                 elif growth > -5:
                                     emoji = "📉"
@@ -221,14 +221,11 @@ async def tonprice_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         else:
             emoji = "💥"
 
-        message = (
-            f"{emoji} <b>TON:</b> ${price:.4f} ({change:+.2f}%)\n"
-            f'<a href="https://www.coingecko.com/en/coins/the-open-network">🌐 Смотреть на CoinGecko</a>'
-        )
+        message = f"{emoji} <b>TON:</b> ${price:.4f} ({change:+.2f}%)"
     else:
         message = "Не удалось получить цену TON 😕"
 
-    await update.message.reply_text(message, parse_mode=ParseMode.HTML, disable_web_page_preview=False)
+    await update.message.reply_text(message, parse_mode=ParseMode.HTML, disable_web_page_preview=True)
 
 if __name__ == '__main__':
     app = ApplicationBuilder().token(BOT_TOKEN).build()
