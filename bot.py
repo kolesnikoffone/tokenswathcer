@@ -59,23 +59,24 @@ async def get_tokens():
                 logger.info(f"DYOR API responded with status {response.status}")
                 if response.status == 200:
                     data = await response.json()
-                    tokens = data.get('data', [])
+                    tokens = data.get('jettons', [])  # <= Исправлено здесь
                     ton_usd_price = await get_ton_price()
                     result = []
 
                     filtered = []
                     for token in tokens:
                         try:
-                            cap = float(token.get("fdvUsd", 0))
+                            cap = float(token.get("fdmc", {}).get("value", 0)) / (10 ** token.get("fdmc", {}).get("decimals", 6))
                             if cap >= 11000:
                                 filtered.append((token, cap))
                         except:
                             continue
 
                     for idx, (token, cap) in enumerate(filtered[:15], 1):
-                        name = token.get('name', 'N/A')
-                        symbol = token.get('symbol', 'N/A')
-                        address = token.get('address')
+                        metadata = token.get("metadata", {})
+                        name = metadata.get('name', 'N/A')
+                        symbol = metadata.get('symbol', 'N/A')
+                        address = metadata.get('address')
                         change = token.get('priceChange1h')
 
                         mcap = f"<b>${cap/1000:.1f}K</b>" if cap >= 1_000 else f"<b>${cap:.2f}</b>"
