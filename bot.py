@@ -37,19 +37,21 @@ def address_to_base64url(address: str) -> str:
     crc16 = crcmod.predefined.mkPredefinedCrcFun('crc-ccitt-false')
     checksum = crc16(data).to_bytes(2, 'big')
     full = data + checksum
-    return base64.urlsafe_b64encode(full).decode()  # НЕ удаляем padding
+    return base64.urlsafe_b64encode(full).decode()
 
 async def get_ton_price():
-    url = 'https://api.coingecko.com/api/v3/simple/price?ids=the-open-network&vs_currencies=usd'
+    url = 'https://api.coingecko.com/api/v3/simple/price?ids=the-open-network&vs_currencies=usd&include_24hr_change=true'
     try:
         async with aiohttp.ClientSession() as session:
             async with session.get(url) as response:
                 if response.status == 200:
                     data = await response.json()
-                    return float(data["the-open-network"]["usd"])
+                    price = float(data["the-open-network"]["usd"])
+                    change = float(data["the-open-network"].get("usd_24h_change", 0))
+                    return price, change
     except Exception as e:
         logger.warning(f"Не удалось получить цену TON: {e}")
-    return 0
+    return None, 0
 
 async def get_tokens():
     url = 'https://prod-api.bigpump.app/api/v1/coins?sortType=pocketfi&limit=30'
@@ -68,7 +70,7 @@ async def get_tokens():
                 if response.status == 200:
                     data = await response.json()
                     tokens = data.get('coins', [])
-                    ton_usd_price = await get_ton_price()
+                    ton_usd_price, _ = await get_ton_price()
                     result = []
 
                     filtered = []
@@ -155,9 +157,35 @@ async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
         except Exception as e:
             logger.warning(f"Не удалось обновить сообщение: {e}")
 
+async def tonprice_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    price, change = await get_ton_price()
+    if price is not None:
+        if change >= 5:
+            emoji = "🚀"
+        elif change >= 1:
+            emoji = "📈"
+        elif change > 0:
+            emoji = "🔼"
+        elif change > -1:
+            emoji = "🔽"
+        elif change > -5:
+            emoji = "📉"
+        else:
+            emoji = "💥"
+
+        message = (
+            f"{emoji} <b>TON:</b> ${price:.4f} ({change:+.2f}%)\n"
+            f'<a href="https://www.coingecko.com/en/coins/the-open-network">🌐 Смотреть на CoinGecko</a>'
+        )
+    else:
+        message = "Не удалось получить цену TON 😕"
+
+    await update.message.reply_text(message, parse_mode=ParseMode.HTML, disable_web_page_preview=False)
+
 if __name__ == '__main__':
     app = ApplicationBuilder().token(BOT_TOKEN).build()
     app.add_handler(CommandHandler("listings", listings_command))
+    app.add_handler(CommandHandler("tonprice", tonprice_command))
     app.add_handler(CallbackQueryHandler(button_callback))
     print("Бот запущен...")
     app.run_polling()
