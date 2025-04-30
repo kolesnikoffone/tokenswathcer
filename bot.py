@@ -37,7 +37,10 @@ def raw_to_user_friendly(address: str) -> str:
     crc16 = crcmod.predefined.mkPredefinedCrcFun('crc-ccitt-false')
     checksum = crc16(data).to_bytes(2, 'big')
     full = data + checksum
-    return base64.urlsafe_b64encode(full).decode().rstrip('=')
+    return base64.urlsafe_b64encode(full).decode()  # сохраняем padding
+
+def address_to_base64url(address: str) -> str:
+    return raw_to_user_friendly(address)
 
 async def get_ton_price():
     url = 'https://api.coingecko.com/api/v3/simple/price?ids=the-open-network&vs_currencies=usd&include_24hr_change=true'
@@ -91,8 +94,8 @@ async def get_tokens():
                         mcap = f"<b>${cap/1000:.1f}K</b>" if cap >= 1_000 else f"<b>${cap:.2f}</b>"
 
                         if address:
-                            friendly_address = raw_to_user_friendly(address)
-                            link = f"https://t.me/tontrade?start={REFERRAL_PREFIX}{friendly_address}"
+                            encoded_address = address_to_base64url(address)
+                            link = f"https://t.me/tontrade?start={REFERRAL_PREFIX}{encoded_address}"
                             name_symbol = f'<a href="{link}">{name} ({symbol})</a>'
                         else:
                             name_symbol = f'{name} ({symbol})'
