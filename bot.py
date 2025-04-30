@@ -20,25 +20,6 @@ logger = logging.getLogger(__name__)
 REFERRAL_PREFIX = "prghZZEt-"
 latest_tokens_result = None
 
-def address_to_base64url(address: str) -> str:
-    address = address.strip()
-    if ':' in address:
-        wc_str, hex_addr = address.split(':')
-        wc = int(wc_str)
-        addr_bytes = bytes.fromhex(hex_addr)
-    else:
-        wc = 0
-        addr_bytes = bytes.fromhex(address)
-
-    tag = 0x11
-    wc_byte = wc.to_bytes(1, byteorder="big", signed=True)
-    data = bytes([tag]) + wc_byte + addr_bytes
-
-    crc16 = crcmod.predefined.mkPredefinedCrcFun('crc-ccitt-false')
-    checksum = crc16(data).to_bytes(2, 'big')
-    full = data + checksum
-    return base64.urlsafe_b64encode(full).decode()
-
 async def get_ton_price():
     url = 'https://api.coingecko.com/api/v3/simple/price?ids=the-open-network&vs_currencies=usd'
     try:
@@ -57,38 +38,35 @@ async def get_tokens():
         async with aiohttp.ClientSession() as session:
             async with session.get(url) as response:
                 logger.info(f"DYOR API responded with status {response.status}")
-
-                if response.status == 429:
-                    return "Ошибка 429: слишком много запросов. Попробуй позже."
-
                 if response.status == 200:
                     data = await response.json()
-                    tokens = data.get('data', [])
+                    tokens = data.get('jettons', [])
+                    address_book = data.get('addressBook', {})
                     logger.info(f"Получено токенов: {len(tokens)}")
-
                     ton_usd_price = await get_ton_price()
                     result = []
 
                     filtered = []
                     for token in tokens:
                         try:
-                            cap = float(token.get("fdvUsd", 0))
-                            filtered.append((token, cap))  # Без фильтра на сумму, пока для отладки
-                        except Exception as e:
-                            logger.warning(f"Ошибка при фильтрации токена: {e}")
+                            cap = float(token.get("fdmc", {}).get("value", 0)) / (10 ** token.get("fdmc", {}).get("decimals", 6))
+                            if cap >= 11:  # тысяч долларов
+                                filtered.append((token, cap))
+                        except:
                             continue
 
                     for idx, (token, cap) in enumerate(filtered[:15], 1):
-                        name = token.get('name', 'N/A')
-                        symbol = token.get('symbol', 'N/A')
-                        address = token.get('address')
+                        meta = token.get('metadata', {})
+                        name = meta.get('name', 'N/A')
+                        symbol = meta.get('symbol', 'N/A')
+                        address = meta.get('address')
                         change = token.get('priceChange1h')
 
                         mcap = f"<b>${cap/1000:.1f}K</b>" if cap >= 1_000 else f"<b>${cap:.2f}</b>"
 
-                        if address:
-                            encoded_address = address_to_base64url(address)
-                            link = f"https://t.me/tontrade?start={REFERRAL_PREFIX}{encoded_address}"
+                        if address and address in address_book:
+                            user_friendly = address_book[address].get('userFriendly')
+                            link = f"https://t.me/tontrade?start={REFERRAL_PREFIX}{user_friendly}"
                             name_symbol = f'<a href="{link}">{name} ({symbol})</a>'
                         else:
                             name_symbol = f'{name} ({symbol})'
