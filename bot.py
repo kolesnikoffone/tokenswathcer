@@ -1,11 +1,11 @@
 import logging
 import os
 import aiohttp
-from datetime import datetime, timedelta
 from pytoniq_core import Address
 from telegram import InlineKeyboardButton, InlineKeyboardMarkup, Update
 from telegram.constants import ParseMode
 from telegram.ext import ApplicationBuilder, CommandHandler, CallbackQueryHandler, ContextTypes
+from datetime import datetime, timedelta
 
 BOT_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN")
 if not BOT_TOKEN:
@@ -18,8 +18,7 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 REFERRAL_PREFIX = "prghZZEt-"
-latest_tokens_result = {}
-PAGE_SIZE = 10
+latest_tokens_result = []
 
 
 def address_to_base64url(address: str) -> str:
@@ -47,7 +46,7 @@ async def get_ton_price():
 
 
 async def get_tokens():
-    url = 'https://prod-api.bigpump.app/api/v1/coins?sortType=pocketfi&limit=40'
+    url = 'https://prod-api.bigpump.app/api/v1/coins?sortType=pocketfi&limit=30'
     headers = {
         'accept': '*/*',
         'accept-language': 'en-US,en;q=0.9,ru-RU;q=0.8,ru;q=0.7',
@@ -64,6 +63,7 @@ async def get_tokens():
                     data = await response.json()
                     tokens = data.get('coins', [])
                     ton_usd_price, _ = await get_ton_price()
+                    result = []
 
                     filtered = []
                     for token in tokens:
@@ -73,111 +73,101 @@ async def get_tokens():
                                 filtered.append((token, cap))
                         except:
                             continue
-                    return filtered
+
+                    for idx, (token, cap) in enumerate(filtered[:30], 1):
+                        name = token.get('name', 'N/A')
+                        symbol = token.get('symbol', 'N/A')
+                        address = token.get('address')
+                        change = token.get('priceChange1H')
+
+                        mcap = f"<b>${cap/1000:.1f}K</b>" if cap >= 1_000 else f"<b>${cap:.2f}</b>"
+
+                        if address:
+                            try:
+                                encoded_address = address_to_base64url(address)
+                                link = f"https://t.me/tontrade?start={REFERRAL_PREFIX}{encoded_address}"
+                                name_symbol = f'<a href="{link}">{name} ({symbol})</a>'
+                            except Exception as e:
+                                logger.warning(f"Ошибка при конвертации адреса: {e}")
+                                name_symbol = f'{name} ({symbol})'
+                        else:
+                            name_symbol = f'{name} ({symbol})'
+
+                        emoji = ""
+                        try:
+                            growth = float(change)
+                            if growth >= 100:
+                                emoji = "💎"
+                            elif growth >= 50:
+                                emoji = "🤑"
+                            elif growth >= 25:
+                                emoji = "💸"
+                            elif growth >= 10:
+                                emoji = "💪"
+                            elif growth >= 5:
+                                emoji = "🙃"
+                            elif growth > 0:
+                                emoji = "🥹"
+                            elif growth > -10:
+                                emoji = "🥲"
+                            elif growth > -25:
+                                emoji = "😭"
+                            else:
+                                emoji = "🤡"
+                            growth_str = f"{emoji} {growth:.2f}%"
+                        except:
+                            growth_str = "N/A"
+
+                        line = f"{idx}. {name_symbol} | {mcap} | {growth_str}"
+                        result.append(line)
+
+                    return result
                 else:
-                    return []
+                    return [f"Ошибка {response.status}"]
     except Exception as e:
         logger.exception("Ошибка при обращении к BigPump API")
-        return []
-
-
-def format_tokens(tokens, page):
-    start = (page - 1) * PAGE_SIZE
-    end = start + PAGE_SIZE
-    result = []
-    for idx, (token, cap) in enumerate(tokens[start:end], start + 1):
-        name = token.get('name', 'N/A')
-        symbol = token.get('symbol', 'N/A')
-        address = token.get('address')
-        change = token.get('priceChange1H')
-
-        mcap = f"<b>${cap/1000:.1f}K</b>" if cap >= 1_000 else f"<b>${cap:.2f}</b>"
-
-        if address:
-            try:
-                encoded_address = address_to_base64url(address)
-                link = f"https://t.me/tontrade?start={REFERRAL_PREFIX}{encoded_address}"
-                name_symbol = f'<a href="{link}">{name} ({symbol})</a>'
-            except:
-                name_symbol = f'{name} ({symbol})'
-        else:
-            name_symbol = f'{name} ({symbol})'
-
-        emoji = ""
-        try:
-            growth = float(change)
-            if growth >= 100:
-                emoji = "💎"
-            elif growth >= 50:
-                emoji = "🤑"
-            elif growth >= 25:
-                emoji = "💸"
-            elif growth >= 10:
-                emoji = "💪"
-            elif growth >= 5:
-                emoji = "🙃"
-            elif growth > 0:
-                emoji = "🥹"
-            elif growth > -10:
-                emoji = "🥲"
-            elif growth > -25:
-                emoji = "😭"
-            else:
-                emoji = "🤡"
-            growth_str = f"{emoji} {growth:.2f}%"
-        except:
-            growth_str = "N/A"
-
-        result.append(f"{idx}. {name_symbol} | {mcap} | {growth_str}")
-
-    timestamp = (datetime.utcnow() + timedelta(hours=3)).strftime("%d.%m.%Y %H:%M:%S")
-    return f"Обновлено: {timestamp} (UTC+3) | ID: {start}\n\n" + "\n\n".join(result)
-
-
-def get_keyboard(current_page, max_page):
-    buttons = [
-        InlineKeyboardButton("⏪", callback_data="page:1"),
-        InlineKeyboardButton("🔄 Обновить", callback_data=f"refresh:{current_page}"),
-        InlineKeyboardButton("⏩", callback_data=f"page:{2}" if current_page == 1 else f"page:{1}")
-    ]
-    return InlineKeyboardMarkup([buttons])
+        return [f"Ошибка при запросе: {str(e)}"]
 
 
 async def listings_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    tokens = await get_tokens()
-    if not tokens:
-        await update.message.reply_text("Нет подходящих токенов")
-        return
-    latest_tokens_result["data"] = tokens
-    text = format_tokens(tokens, 1)
-    reply_markup = get_keyboard(1, 2)
-    await update.message.reply_text(text, parse_mode=ParseMode.HTML, disable_web_page_preview=True, reply_markup=reply_markup)
+    global latest_tokens_result
+    latest_tokens_result = await get_tokens()
+    await send_page(update.message.reply_text, 0)
 
 
 async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    global latest_tokens_result
     query = update.callback_query
     await query.answer()
 
-    if not latest_tokens_result.get("data"):
-        latest_tokens_result["data"] = await get_tokens()
+    page = int(query.data.split('_')[1]) if '_' in query.data else 0
+    if query.data.startswith("page"):
+        await send_page(query.edit_message_text, page)
+    elif query.data == "refresh":
+        latest_tokens_result = await get_tokens()
+        await send_page(query.edit_message_text, 0)
 
-    tokens = latest_tokens_result["data"]
-    data = query.data
-    if data.startswith("refresh"):
-        _, page = data.split(":")
-        page = int(page)
-    elif data.startswith("page"):
-        _, page = data.split(":")
-        page = int(page)
-    else:
-        page = 1
 
-    text = format_tokens(tokens, page)
-    reply_markup = get_keyboard(page, 2)
-    try:
-        await query.edit_message_text(text=text, parse_mode=ParseMode.HTML, disable_web_page_preview=True, reply_markup=reply_markup)
-    except Exception as e:
-        logger.warning(f"Не удалось обновить сообщение: {e}")
+def get_page_content(page):
+    tokens = latest_tokens_result
+    per_page = 10
+    start = page * per_page
+    page_tokens = tokens[start:start+per_page]
+    timestamp = (datetime.utcnow() + timedelta(hours=3)).strftime("%d.%m.%Y %H:%M:%S (UTC+3)")
+    footer = f"\n\nОбновлено: {timestamp} | ID: {len(tokens)}"
+    return "\n\n".join(page_tokens) + footer
+
+
+async def send_page(send_func, page):
+    text = get_page_content(page)
+    next_page = (page + 1) % ((len(latest_tokens_result) + 9) // 10)
+    keyboard = InlineKeyboardMarkup([
+        [
+            InlineKeyboardButton("🔄 Обновить", callback_data="refresh"),
+            InlineKeyboardButton("➡️", callback_data=f"page_{next_page}")
+        ]
+    ])
+    await send_func(text, parse_mode=ParseMode.HTML, disable_web_page_preview=True, reply_markup=keyboard)
 
 
 if __name__ == '__main__':
