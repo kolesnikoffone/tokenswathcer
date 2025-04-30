@@ -46,7 +46,7 @@ async def get_ton_price():
 
 
 async def get_tokens():
-    url = 'https://prod-api.bigpump.app/api/v1/coins?sortType=pocketfi&limit=30'
+    url = 'https://prod-api.bigpump.app/api/v1/coins?sortType=pocketfi&limit=40'
     headers = {
         'accept': '*/*',
         'authorization': 'Bearer eyJhbGciOiJIUzI1NiJ9.eyJhZGRyZXNzIjoiMDpmNWI5MWRkZDBiOWM4N2VmNjUwMTFhNzlmMWRhNzE5NzIwYzVhODgwN2I1NGMxYTQwNTIyNzRmYTllMzc5YmNkIiwibmV0d29yayI6Ii0yMzkiLCJpYXQiOjE3NDI4MDY4NTMsImV4cCI6MTc3NDM2NDQ1M30.U_GaaX5psI572w4YmwAjlh8u4uFBVHdsD-zJacvWiPo'
