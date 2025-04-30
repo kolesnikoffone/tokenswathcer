@@ -20,27 +20,15 @@ logger = logging.getLogger(__name__)
 REFERRAL_PREFIX = "prghZZEt-"
 latest_tokens_result = None
 
-def raw_to_user_friendly(address: str) -> str:
-    address = address.strip()
-    if ':' in address:
-        wc_str, hex_addr = address.split(':')
-        wc = int(wc_str)
-        addr_bytes = bytes.fromhex(hex_addr)
-    else:
-        wc = 0
-        addr_bytes = bytes.fromhex(address)
-
-    tag = 0x11
+def address_to_base64url(hex_address: str, wc: int = 0) -> str:
+    addr_bytes = bytes.fromhex(hex_address)
+    tag = 0x11  # bounceable, non-test, user-friendly
     wc_byte = wc.to_bytes(1, byteorder="big", signed=True)
     data = bytes([tag]) + wc_byte + addr_bytes
-
     crc16 = crcmod.predefined.mkPredefinedCrcFun('crc-ccitt-false')
     checksum = crc16(data).to_bytes(2, 'big')
     full = data + checksum
-    return base64.urlsafe_b64encode(full).decode()  # сохраняем padding
-
-def address_to_base64url(address: str) -> str:
-    return raw_to_user_friendly(address)
+    return base64.urlsafe_b64encode(full).decode()
 
 async def get_ton_price():
     url = 'https://api.coingecko.com/api/v3/simple/price?ids=the-open-network&vs_currencies=usd&include_24hr_change=true'
@@ -88,15 +76,20 @@ async def get_tokens():
                     for idx, (token, cap) in enumerate(filtered[:15], 1):
                         name = token.get('name', 'N/A')
                         symbol = token.get('symbol', 'N/A')
-                        address = token.get('address')
+                        raw_address = token.get('address')
                         change = token.get('priceChange1H')
 
                         mcap = f"<b>${cap/1000:.1f}K</b>" if cap >= 1_000 else f"<b>${cap:.2f}</b>"
 
-                        if address:
-                            encoded_address = address_to_base64url(address)
-                            link = f"https://t.me/tontrade?start={REFERRAL_PREFIX}{encoded_address}"
-                            name_symbol = f'<a href="{link}">{name} ({symbol})</a>'
+                        if raw_address and ':' in raw_address:
+                            wc_str, hex_addr = raw_address.split(':')
+                            try:
+                                wc = int(wc_str)
+                                encoded_address = address_to_base64url(hex_addr, wc)
+                                link = f"https://t.me/tontrade?start={REFERRAL_PREFIX}{encoded_address}"
+                                name_symbol = f'<a href="{link}">{name} ({symbol})</a>'
+                            except:
+                                name_symbol = f'{name} ({symbol})'
                         else:
                             name_symbol = f'{name} ({symbol})'
 
