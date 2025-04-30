@@ -1,7 +1,8 @@
 import logging
 import os
 import aiohttp
-from pytoniq_core import Address
+import base64
+import crcmod
 from telegram import InlineKeyboardButton, InlineKeyboardMarkup, Update
 from telegram.constants import ParseMode
 from telegram.ext import ApplicationBuilder, CommandHandler, CallbackQueryHandler, ContextTypes
@@ -17,15 +18,29 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 REFERRAL_PREFIX = "prghZZEt-"
-latest_tokens_result = None
+TOKENS_PER_PAGE = 10
+TOTAL_PAGES = 3
+
 
 def address_to_base64url(address: str) -> str:
-    return Address(address).to_str(
-        is_user_friendly=True,
-        is_bounceable=True,
-        is_test_only=False,
-        is_url_safe=True
-    )
+    address = address.strip()
+    if ':' in address:
+        wc_str, hex_addr = address.split(':')
+        wc = int(wc_str)
+        addr_bytes = bytes.fromhex(hex_addr)
+    else:
+        wc = 0
+        addr_bytes = bytes.fromhex(address)
+
+    tag = 0x11
+    wc_byte = wc.to_bytes(1, byteorder="big", signed=True)
+    data = bytes([tag]) + wc_byte + addr_bytes
+
+    crc16 = crcmod.predefined.mkPredefinedCrcFun('crc-ccitt-false')
+    checksum = crc16(data).to_bytes(2, 'big')
+    full = data + checksum
+    return base64.urlsafe_b64encode(full).decode()
+
 
 async def get_ton_price():
     url = 'https://api.coingecko.com/api/v3/simple/price?ids=the-open-network&vs_currencies=usd&include_24hr_change=true'
@@ -41,7 +56,8 @@ async def get_ton_price():
         logger.warning(f"Не удалось получить цену TON: {e}")
     return None, 0
 
-async def get_tokens():
+
+async def fetch_tokens():
     url = 'https://prod-api.bigpump.app/api/v1/coins?sortType=pocketfi&limit=30'
     headers = {
         'accept': '*/*',
@@ -57,101 +73,117 @@ async def get_tokens():
                 logger.info(f"BigPump API responded with status {response.status}")
                 if response.status == 200:
                     data = await response.json()
-                    tokens = data.get('coins', [])
-                    ton_usd_price, _ = await get_ton_price()
-                    result = []
-
-                    filtered = []
-                    for token in tokens:
-                        try:
-                            cap = float(token.get("marketCap", 0)) * ton_usd_price / 1e9
-                            if cap >= 11000:
-                                filtered.append((token, cap))
-                        except:
-                            continue
-
-                    for idx, (token, cap) in enumerate(filtered[:15], 1):
-                        name = token.get('name', 'N/A')
-                        symbol = token.get('symbol', 'N/A')
-                        address = token.get('address')
-                        change = token.get('priceChange1H')
-
-                        mcap = f"<b>${cap/1000:.1f}K</b>" if cap >= 1_000 else f"<b>${cap:.2f}</b>"
-
-                        if address:
-                            try:
-                                encoded_address = address_to_base64url(address)
-                                logger.info(f"Address conversion: {address} -> {encoded_address}")
-                                link = f"https://t.me/tontrade?start={REFERRAL_PREFIX}{encoded_address}"
-                                name_symbol = f'<a href="{link}">{name} ({symbol})</a>'
-                            except Exception as e:
-                                logger.warning(f"Ошибка при конвертации адреса: {e}")
-                                name_symbol = f'{name} ({symbol})'
-                        else:
-                            name_symbol = f'{name} ({symbol})'
-
-                        emoji = ""
-                        try:
-                            growth = float(change)
-                            if growth >= 100:
-                                emoji = "💎"
-                            elif growth >= 50:
-                                emoji = "🤑"
-                            elif growth >= 25:
-                                emoji = "💸"
-                            elif growth >= 10:
-                                emoji = "💪"
-                            elif growth >= 5:
-                                emoji = "🙃"
-                            elif growth > 0:
-                                emoji = "🥹"
-                            elif growth > -10:
-                                emoji = "🥲"
-                            elif growth > -25:
-                                emoji = "😭"
-                            else:
-                                emoji = "🤡"
-                            growth_str = f"{emoji} {growth:.2f}%"
-                        except:
-                            growth_str = "N/A"
-
-                        line = f"{idx}. {name_symbol} | {mcap} | {growth_str}"
-                        result.append(line)
-
-                    return "\n\n".join(result) if result else None
-                else:
-                    return f"Ошибка {response.status}"
+                    return data.get('coins', [])
     except Exception as e:
         logger.exception("Ошибка при обращении к BigPump API")
-        return f"Ошибка при запросе: {str(e)}"
+    return []
+
+
+def build_keyboard(page: int) -> InlineKeyboardMarkup:
+    buttons = []
+    if page > 1:
+        buttons.append(InlineKeyboardButton("⏪ Назад", callback_data=f"page_{page - 1}"))
+    buttons.append(InlineKeyboardButton("🔄 Обновить", callback_data=f"refresh_{page}"))
+    if page < TOTAL_PAGES:
+        buttons.append(InlineKeyboardButton("⏩ Вперёд", callback_data=f"page_{page + 1}"))
+    return InlineKeyboardMarkup([buttons])
+
+
+async def generate_token_page(page: int, context: ContextTypes.DEFAULT_TYPE) -> str:
+    tokens = context.user_data.get("tokens")
+    if not tokens:
+        all_tokens = await fetch_tokens()
+        ton_usd_price, _ = await get_ton_price()
+        filtered = []
+        for token in all_tokens:
+            try:
+                cap = float(token.get("marketCap", 0)) * ton_usd_price / 1e9
+                if cap >= 11:
+                    filtered.append((token, cap))
+            except:
+                continue
+        context.user_data["tokens"] = filtered
+        tokens = filtered
+
+    start = (page - 1) * TOKENS_PER_PAGE
+    end = start + TOKENS_PER_PAGE
+    current_slice = tokens[start:end]
+
+    if not current_slice:
+        return "Нет подходящих токенов"
+
+    result = [f"<i>Страница {page} из {TOTAL_PAGES}</i>\n"]
+    for idx, (token, cap) in enumerate(current_slice, start + 1):
+        name = token.get('name', 'N/A')
+        symbol = token.get('symbol', 'N/A')
+        address = token.get('address')
+        change = token.get('priceChange1H')
+
+        mcap = f"<b>${cap/1000:.1f}K</b>" if cap >= 1_000 else f"<b>${cap:.2f}</b>"
+        name_symbol = f"{name} ({symbol})"
+
+        if address:
+            encoded = address_to_base64url(address)
+            logger.info(f"Address conversion: {address} -> {encoded}")
+            link = f"https://t.me/tontrade?start={REFERRAL_PREFIX}{encoded}"
+            name_symbol = f'<a href="{link}">{name_symbol}</a>'
+
+        emoji = ""
+        try:
+            growth = float(change)
+            if growth >= 100:
+                emoji = "💎"
+            elif growth >= 50:
+                emoji = "🤑"
+            elif growth >= 25:
+                emoji = "💸"
+            elif growth >= 10:
+                emoji = "💪"
+            elif growth >= 5:
+                emoji = "🙃"
+            elif growth > 0:
+                emoji = "🥹"
+            elif growth > -10:
+                emoji = "🥲"
+            elif growth > -25:
+                emoji = "😭"
+            else:
+                emoji = "🤡"
+            growth_str = f"{emoji} {growth:.2f}%"
+        except:
+            growth_str = "N/A"
+
+        result.append(f"{idx}. {name_symbol} | {mcap} | {growth_str}")
+
+    return "\n\n".join(result)
+
 
 async def listings_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    global latest_tokens_result
-    result = await get_tokens()
-    if result:
-        latest_tokens_result = result
-    else:
-        result = latest_tokens_result or "Нет подходящих токенов"
+    page = 1
+    context.user_data["page"] = page
+    text = await generate_token_page(page, context)
+    keyboard = build_keyboard(page)
+    await update.message.reply_text(text, parse_mode=ParseMode.HTML, disable_web_page_preview=True, reply_markup=keyboard)
 
-    keyboard = InlineKeyboardMarkup([
-        [InlineKeyboardButton("🔄 Обновить", callback_data="refresh")]
-    ])
-    await update.message.reply_text(result, parse_mode=ParseMode.HTML, disable_web_page_preview=True, reply_markup=keyboard)
 
 async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    global latest_tokens_result
     query = update.callback_query
     await query.answer()
-    result = await get_tokens()
-    if result and result != latest_tokens_result:
-        latest_tokens_result = result
-        keyboard = InlineKeyboardMarkup([
-            [InlineKeyboardButton("🔄 Обновить", callback_data="refresh")]
-        ])
-        try:
-            await query.edit_message_text(text=result, parse_mode=ParseMode.HTML, disable_web_page_preview=True, reply_markup=keyboard)
-        except Exception as e:
-            logger.warning(f"Не удалось обновить сообщение: {e}")
+
+    data = query.data
+    if data.startswith("page_"):
+        page = int(data.split("_")[1])
+    elif data.startswith("refresh_"):
+        page = int(data.split("_")[1])
+        context.user_data["tokens"] = None  # force refresh
+    else:
+        return
+
+    context.user_data["page"] = page
+    text = await generate_token_page(page, context)
+    keyboard = build_keyboard(page)
+    await query.edit_message_text(text=text, parse_mode=ParseMode.HTML, disable_web_page_preview=True, reply_markup=keyboard)
+
 
 async def tonprice_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     price, change = await get_ton_price()
@@ -177,6 +209,7 @@ async def tonprice_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         message = "Не удалось получить цену TON 😕"
 
     await update.message.reply_text(message, parse_mode=ParseMode.HTML, disable_web_page_preview=False)
+
 
 if __name__ == '__main__':
     app = ApplicationBuilder().token(BOT_TOKEN).build()
