@@ -20,15 +20,29 @@ logger = logging.getLogger(__name__)
 REFERRAL_PREFIX = "prghZZEt-"
 latest_tokens_result = None
 
-def address_to_base64url(hex_address: str, wc: int = 0) -> str:
-    addr_bytes = bytes.fromhex(hex_address)
-    tag = 0x11  # bounceable, non-test, user-friendly
+def address_to_base64url(address: str) -> str:
+    address = address.strip()
+    original_address = address  # лог
+
+    if ':' in address:
+        wc_str, hex_addr = address.split(':')
+        wc = int(wc_str)
+        addr_bytes = bytes.fromhex(hex_addr)
+    else:
+        wc = 0
+        addr_bytes = bytes.fromhex(address)
+
+    tag = 0x11
     wc_byte = wc.to_bytes(1, byteorder="big", signed=True)
     data = bytes([tag]) + wc_byte + addr_bytes
+
     crc16 = crcmod.predefined.mkPredefinedCrcFun('crc-ccitt-false')
     checksum = crc16(data).to_bytes(2, 'big')
     full = data + checksum
-    return base64.urlsafe_b64encode(full).decode()
+
+    b64 = base64.urlsafe_b64encode(full).decode().rstrip("=")
+    logger.info(f"Address conversion: {original_address} -> {b64}")
+    return b64
 
 async def get_ton_price():
     url = 'https://api.coingecko.com/api/v3/simple/price?ids=the-open-network&vs_currencies=usd&include_24hr_change=true'
@@ -76,20 +90,15 @@ async def get_tokens():
                     for idx, (token, cap) in enumerate(filtered[:15], 1):
                         name = token.get('name', 'N/A')
                         symbol = token.get('symbol', 'N/A')
-                        raw_address = token.get('address')
+                        address = token.get('address')
                         change = token.get('priceChange1H')
 
                         mcap = f"<b>${cap/1000:.1f}K</b>" if cap >= 1_000 else f"<b>${cap:.2f}</b>"
 
-                        if raw_address and ':' in raw_address:
-                            wc_str, hex_addr = raw_address.split(':')
-                            try:
-                                wc = int(wc_str)
-                                encoded_address = address_to_base64url(hex_addr, wc)
-                                link = f"https://t.me/tontrade?start={REFERRAL_PREFIX}{encoded_address}"
-                                name_symbol = f'<a href="{link}">{name} ({symbol})</a>'
-                            except:
-                                name_symbol = f'{name} ({symbol})'
+                        if address:
+                            encoded_address = address_to_base64url(address)
+                            link = f"https://t.me/tontrade?start={REFERRAL_PREFIX}{encoded_address}"
+                            name_symbol = f'<a href="{link}">{name} ({symbol})</a>'
                         else:
                             name_symbol = f'{name} ({symbol})'
 
@@ -132,11 +141,16 @@ async def listings_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     global latest_tokens_result
     result = await get_tokens()
     if result:
-        latest_tokens_result = result
+        if result != latest_tokens_result:
+            latest_tokens_result = result
         keyboard = InlineKeyboardMarkup([
             [InlineKeyboardButton("🔄 Обновить", callback_data="refresh")]
         ])
         await update.message.reply_text(result, parse_mode=ParseMode.HTML, disable_web_page_preview=True, reply_markup=keyboard)
+    elif latest_tokens_result:
+        await update.message.reply_text(latest_tokens_result, parse_mode=ParseMode.HTML, disable_web_page_preview=True)
+    else:
+        await update.message.reply_text("Нет подходящих токенов 😕")
 
 async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
     global latest_tokens_result
