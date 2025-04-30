@@ -1,12 +1,11 @@
 import logging
 import os
 import aiohttp
-import random
-from datetime import datetime, timedelta
 from pytoniq_core import Address
 from telegram import InlineKeyboardButton, InlineKeyboardMarkup, Update
 from telegram.constants import ParseMode
 from telegram.ext import ApplicationBuilder, CommandHandler, CallbackQueryHandler, ContextTypes
+from datetime import datetime, timedelta
 
 BOT_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN")
 if not BOT_TOKEN:
@@ -20,6 +19,7 @@ logger = logging.getLogger(__name__)
 
 REFERRAL_PREFIX = "prghZZEt-"
 latest_tokens_result = None
+latest_tokens_id = 0
 
 
 def address_to_base64url(address: str) -> str:
@@ -123,47 +123,53 @@ async def get_tokens():
                         line = f"{idx}. {name_symbol} | {mcap} | {growth_str}"
                         result.append(line)
 
-                    now = datetime.utcnow() + timedelta(hours=3)
-                    timestamp = now.strftime("%d.%m.%Y %H:%M:%S")
-                    update_id = random.randint(100, 999)
-                    result.append(f"\n📅 Обновлено: {timestamp} (UTC+3) | ID: {update_id}")
-
                     return "\n\n".join(result) if result else None
                 else:
-                    return f"Ошибка {response.status}"
+                    return None
     except Exception as e:
         logger.exception("Ошибка при обращении к BigPump API")
-        return f"Ошибка при запросе: {str(e)}"
+        return None
+
+
+def build_message(result: str) -> str:
+    timestamp = datetime.utcnow() + timedelta(hours=3)
+    update_time = timestamp.strftime("%d.%m.%Y %H:%M:%S")
+    return f"Обновлено: {update_time} (UTC+3)\n\n{result}"
 
 
 async def listings_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    global latest_tokens_result
+    global latest_tokens_result, latest_tokens_id
     result = await get_tokens()
     if result:
         latest_tokens_result = result
+        latest_tokens_id += 1
     else:
         result = latest_tokens_result or "Нет подходящих токенов"
 
     keyboard = InlineKeyboardMarkup([
         [InlineKeyboardButton("🔄 Обновить", callback_data="refresh")]
     ])
-    await update.message.reply_text(result, parse_mode=ParseMode.HTML, disable_web_page_preview=True, reply_markup=keyboard)
+    await update.message.reply_text(build_message(result), parse_mode=ParseMode.HTML, disable_web_page_preview=True, reply_markup=keyboard)
 
 
 async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    global latest_tokens_result
+    global latest_tokens_result, latest_tokens_id
     query = update.callback_query
     await query.answer()
     result = await get_tokens()
-    if result and result != latest_tokens_result:
+    if result:
         latest_tokens_result = result
-        keyboard = InlineKeyboardMarkup([
-            [InlineKeyboardButton("🔄 Обновить", callback_data="refresh")]
-        ])
-        try:
-            await query.edit_message_text(text=result, parse_mode=ParseMode.HTML, disable_web_page_preview=True, reply_markup=keyboard)
-        except Exception as e:
-            logger.warning(f"Не удалось обновить сообщение: {e}")
+        latest_tokens_id += 1
+    else:
+        result = latest_tokens_result or "Нет подходящих токенов"
+
+    keyboard = InlineKeyboardMarkup([
+        [InlineKeyboardButton("🔄 Обновить", callback_data="refresh")]
+    ])
+    try:
+        await query.edit_message_text(text=build_message(result), parse_mode=ParseMode.HTML, disable_web_page_preview=True, reply_markup=keyboard)
+    except Exception as e:
+        logger.warning(f"Не удалось обновить сообщение: {e}")
 
 
 async def tonprice_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
