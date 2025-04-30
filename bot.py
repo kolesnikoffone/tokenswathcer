@@ -1,11 +1,12 @@
 import logging
 import os
 import aiohttp
+import random
+from datetime import datetime, timedelta
 from pytoniq_core import Address
 from telegram import InlineKeyboardButton, InlineKeyboardMarkup, Update
 from telegram.constants import ParseMode
 from telegram.ext import ApplicationBuilder, CommandHandler, CallbackQueryHandler, ContextTypes
-from datetime import datetime, timedelta
 
 BOT_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN")
 if not BOT_TOKEN:
@@ -20,6 +21,7 @@ logger = logging.getLogger(__name__)
 REFERRAL_PREFIX = "prghZZEt-"
 latest_tokens_result = None
 
+
 def address_to_base64url(address: str) -> str:
     return Address(address).to_str(
         is_user_friendly=True,
@@ -27,6 +29,7 @@ def address_to_base64url(address: str) -> str:
         is_test_only=False,
         is_url_safe=True
     )
+
 
 async def get_ton_price():
     url = 'https://api.coingecko.com/api/v3/simple/price?ids=the-open-network&vs_currencies=usd&include_24hr_change=true'
@@ -41,6 +44,7 @@ async def get_ton_price():
     except Exception as e:
         logger.warning(f"Не удалось получить цену TON: {e}")
     return None, 0
+
 
 async def get_tokens():
     url = 'https://prod-api.bigpump.app/api/v1/coins?sortType=pocketfi&limit=30'
@@ -119,8 +123,10 @@ async def get_tokens():
                         line = f"{idx}. {name_symbol} | {mcap} | {growth_str}"
                         result.append(line)
 
-                    timestamp = datetime.utcnow() + timedelta(hours=3)
-                    result.append(f"\nОбновлено: {timestamp.strftime('%Y-%m-%d %H:%M')} (UTC+3)")
+                    now = datetime.utcnow() + timedelta(hours=3)
+                    timestamp = now.strftime("%d.%m.%Y %H:%M:%S")
+                    update_id = random.randint(100, 999)
+                    result.append(f"\n📅 Обновлено: {timestamp} (UTC+3) | ID: {update_id}")
 
                     return "\n\n".join(result) if result else None
                 else:
@@ -128,6 +134,7 @@ async def get_tokens():
     except Exception as e:
         logger.exception("Ошибка при обращении к BigPump API")
         return f"Ошибка при запросе: {str(e)}"
+
 
 async def listings_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     global latest_tokens_result
@@ -141,6 +148,7 @@ async def listings_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         [InlineKeyboardButton("🔄 Обновить", callback_data="refresh")]
     ])
     await update.message.reply_text(result, parse_mode=ParseMode.HTML, disable_web_page_preview=True, reply_markup=keyboard)
+
 
 async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
     global latest_tokens_result
@@ -156,6 +164,7 @@ async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
             await query.edit_message_text(text=result, parse_mode=ParseMode.HTML, disable_web_page_preview=True, reply_markup=keyboard)
         except Exception as e:
             logger.warning(f"Не удалось обновить сообщение: {e}")
+
 
 async def tonprice_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     price, change = await get_ton_price()
@@ -181,6 +190,7 @@ async def tonprice_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         message = "Не удалось получить цену TON 😕"
 
     await update.message.reply_text(message, parse_mode=ParseMode.HTML, disable_web_page_preview=False)
+
 
 if __name__ == '__main__':
     app = ApplicationBuilder().token(BOT_TOKEN).build()
