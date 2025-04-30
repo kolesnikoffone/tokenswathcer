@@ -59,21 +59,22 @@ async def get_tokens():
                 logger.info(f"DYOR API responded with status {response.status}")
                 if response.status == 200:
                     data = await response.json()
-                    tokens = data.get('jettons', [])  # <= Исправлено здесь
+                    tokens = data.get('data', [])
+                    address_book = data.get('addressBook', {})
                     ton_usd_price = await get_ton_price()
                     result = []
 
                     filtered = []
                     for token in tokens:
                         try:
-                            cap = float(token.get("fdmc", {}).get("value", 0)) / (10 ** token.get("fdmc", {}).get("decimals", 6))
+                            cap = float(token.get("fdmc", {}).get("value", 0)) / 1e6
                             if cap >= 11000:
                                 filtered.append((token, cap))
                         except:
                             continue
 
                     for idx, (token, cap) in enumerate(filtered[:15], 1):
-                        metadata = token.get("metadata", {})
+                        metadata = token.get('metadata', {})
                         name = metadata.get('name', 'N/A')
                         symbol = metadata.get('symbol', 'N/A')
                         address = metadata.get('address')
@@ -81,9 +82,9 @@ async def get_tokens():
 
                         mcap = f"<b>${cap/1000:.1f}K</b>" if cap >= 1_000 else f"<b>${cap:.2f}</b>"
 
-                        if address:
-                            encoded_address = address_to_base64url(address)
-                            link = f"https://t.me/tontrade?start={REFERRAL_PREFIX}{encoded_address}"
+                        user_friendly = address_book.get(address, {}).get('userFriendly')
+                        if user_friendly:
+                            link = f"https://t.me/tontrade?start={REFERRAL_PREFIX}{user_friendly}"
                             name_symbol = f'<a href="{link}">{name} ({symbol})</a>'
                         else:
                             name_symbol = f'{name} ({symbol})'
