@@ -18,7 +18,7 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 REFERRAL_PREFIX = "prghZZEt-"
-latest_tokens_result = {}
+latest_tokens_result = {"pages": [], "timestamp": "", "last_page": 0}
 
 def address_to_base64url(address: str) -> str:
     return Address(address).to_str(
@@ -47,7 +47,7 @@ async def get_tokens():
     headers = {
         'accept': '*/*',
         'accept-language': 'en-US,en;q=0.9,ru-RU;q=0.8,ru;q=0.7',
-        'authorization': 'Bearer eyJhbGciOiJIUzI1NiJ9.eyJhZGRyZXNzIjoiMDpmNWI5...WiPo',
+        'authorization': 'Bearer eyJhbGciOiJIUzI1NiJ9.eyJhZGRyZXNzIjoiMDpmNWI5MWRkZDBiOWM4N2VmNjUwMTFhNzlmMWRhNzE5NzIwYzVhODgwN2I1NGMxYTQwNTIyNzRmYTllMzc5YmNkIiwibmV0d29yayI6Ii0yMzkiLCJpYXQiOjE3NDI4MDY4NTMsImV4cCI6MTc3NDM2NDQ1M30.U_GaaX5psI572w4YmwAjlh8u4uFBVHdsD-zJacvWiPo',
         'origin': 'https://bigpump.app',
         'referer': 'https://bigpump.app/',
         'user-agent': 'Mozilla/5.0'
@@ -60,8 +60,7 @@ async def get_tokens():
                     data = await response.json()
                     tokens = data.get('coins', [])
                     ton_usd_price, _ = await get_ton_price()
-                    result = []
-
+                    pages = []
                     filtered = []
                     for token in tokens:
                         try:
@@ -71,62 +70,139 @@ async def get_tokens():
                         except:
                             continue
 
-                    for idx, (token, cap) in enumerate(filtered[:30], 1):
-                        name = token.get('name', 'N/A')
-                        symbol = token.get('symbol', 'N/A')
-                        address = token.get('address')
-                        change = token.get('priceChange1H')
+                    for i in range(0, len(filtered), 10):
+                        result = []
+                        for idx, (token, cap) in enumerate(filtered[i:i+10], i+1):
+                            name = token.get('name', 'N/A')
+                            symbol = token.get('symbol', 'N/A')
+                            address = token.get('address')
+                            change = token.get('priceChange1H')
+                            mcap = f"<b>${cap/1000:.1f}K</b>" if cap >= 1_000 else f"<b>${cap:.2f}</b>"
 
-                        mcap = f"<b>${cap/1000:.1f}K</b>" if cap >= 1_000 else f"<b>${cap:.2f}</b>"
-
-                        if address:
-                            try:
-                                encoded_address = address_to_base64url(address)
-                                logger.info(f"Address conversion: {address} -> {encoded_address}")
-                                link = f"https://t.me/tontrade?start={REFERRAL_PREFIX}{encoded_address}"
-                                name_symbol = f'<a href="{link}">{name} ({symbol})</a>'
-                            except Exception as e:
-                                logger.warning(f"Ошибка при конвертации адреса: {e}")
-                                name_symbol = f'{name} ({symbol})'
-                        else:
-                            name_symbol = f'{name} ({symbol})'
-
-                        emoji = ""
-                        try:
-                            growth = float(change)
-                            if growth >= 100:
-                                emoji = "💎"
-                            elif growth >= 50:
-                                emoji = "🤑"
-                            elif growth >= 25:
-                                emoji = "🚀"
-                            elif growth >= 10:
-                                emoji = "💸"
-                            elif growth >= 5:
-                                emoji = "📈"
-                            elif growth > 0:
-                                emoji = "🥹"
-                            elif growth > -5:
-                                emoji = "📉"
-                            elif growth > -10:
-                                emoji = "💔"
-                            elif growth > -25:
-                                emoji = "😭"
+                            if address:
+                                try:
+                                    encoded_address = address_to_base64url(address)
+                                    link = f"https://t.me/tontrade?start={REFERRAL_PREFIX}{encoded_address}"
+                                    name_symbol = f'<a href="{link}">{name} ({symbol})</a>'
+                                except:
+                                    name_symbol = f'{name} ({symbol})'
                             else:
-                                emoji = "🤡"
-                            growth_str = f"{emoji} {growth:.2f}%"
-                        except:
-                            growth_str = "0️⃣ 0.00%"
+                                name_symbol = f'{name} ({symbol})'
 
-                        line = f"{idx}. {name_symbol} | {mcap} | {growth_str}"
-                        result.append(line)
+                            emoji = ""
+                            try:
+                                growth = float(change)
+                                if growth >= 100:
+                                    emoji = "💎"
+                                elif growth >= 50:
+                                    emoji = "🤑"
+                                elif growth >= 25:
+                                    emoji = "🚀"
+                                elif growth >= 10:
+                                    emoji = "💸"
+                                elif growth >= 5:
+                                    emoji = "📈"
+                                elif growth > 0:
+                                    emoji = "🥹"
+                                elif growth > -5:
+                                    emoji = "📉"
+                                elif growth > -10:
+                                    emoji = "💔"
+                                elif growth > -25:
+                                    emoji = "😭"
+                                else:
+                                    emoji = "🤡"
+                                growth_str = f"{emoji} {growth:.2f}%"
+                            except:
+                                emoji = "0️⃣"
+                                growth_str = f"{emoji} 0.00%"
 
-                    return result if result else None
+                            line = f"{idx}. {name_symbol} | {mcap} | {growth_str}"
+                            result.append(line)
+                        pages.append("\n\n".join(result))
+
+                    timestamp = datetime.utcnow() + timedelta(hours=3)
+                    formatted_time = timestamp.strftime("%d.%m.%Y %H:%M:%S")
+                    return pages, formatted_time
                 else:
-                    return [f"Ошибка {response.status}"]
+                    return [f"Ошибка {response.status}"], ""
     except Exception as e:
         logger.exception("Ошибка при обращении к BigPump API")
-        return [f"Ошибка при запросе: {str(e)}"]
+        return [f"Ошибка при запросе: {str(e)}"], ""
+
+async def listings_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    global latest_tokens_result
+    pages, timestamp = await get_tokens()
+    if pages:
+        latest_tokens_result = {
+            "pages": pages,
+            "timestamp": timestamp,
+            "last_page": 0
+        }
+    else:
+        pages = latest_tokens_result.get("pages")
+        timestamp = latest_tokens_result.get("timestamp")
+
+    page_idx = 0
+    page_text = f"{pages[page_idx]}\n\nОбновлено: {timestamp} (UTC+3) | ID: {page_idx + 1}"
+    buttons = [
+        InlineKeyboardButton("🔄 Обновить", callback_data="refresh"),
+        InlineKeyboardButton("➡️", callback_data="next")
+    ]
+    markup = InlineKeyboardMarkup([buttons])
+    await update.message.reply_text(page_text, parse_mode=ParseMode.HTML, disable_web_page_preview=True, reply_markup=markup)
+
+async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    global latest_tokens_result
+    query = update.callback_query
+    await query.answer()
+    data = query.data
+
+    if not latest_tokens_result["pages"]:
+        return
+
+    if data == "refresh":
+        pages, timestamp = await get_tokens()
+        if pages:
+            latest_tokens_result = {
+                "pages": pages,
+                "timestamp": timestamp,
+                "last_page": 0
+            }
+        else:
+            pages = latest_tokens_result.get("pages")
+            timestamp = latest_tokens_result.get("timestamp")
+
+        page_idx = 0
+    elif data == "next":
+        page_idx = (latest_tokens_result["last_page"] + 1) % len(latest_tokens_result["pages"])
+        latest_tokens_result["last_page"] = page_idx
+        pages = latest_tokens_result["pages"]
+        timestamp = latest_tokens_result["timestamp"]
+    elif data == "prev":
+        page_idx = (latest_tokens_result["last_page"] - 1) % len(latest_tokens_result["pages"])
+        latest_tokens_result["last_page"] = page_idx
+        pages = latest_tokens_result["pages"]
+        timestamp = latest_tokens_result["timestamp"]
+    else:
+        return
+
+    page_text = f"{pages[page_idx]}\n\nОбновлено: {timestamp} (UTC+3) | ID: {page_idx + 1}"
+
+    if len(latest_tokens_result["pages"]) > 1:
+        nav_button = InlineKeyboardButton("⬅️" if page_idx else "➡️", callback_data="prev" if page_idx else "next")
+        buttons = [
+            InlineKeyboardButton("🔄 Обновить", callback_data="refresh"),
+            nav_button
+        ]
+    else:
+        buttons = [InlineKeyboardButton("🔄 Обновить", callback_data="refresh")]
+
+    markup = InlineKeyboardMarkup([buttons])
+    try:
+        await query.edit_message_text(page_text, parse_mode=ParseMode.HTML, disable_web_page_preview=True, reply_markup=markup)
+    except Exception as e:
+        logger.warning(f"Не удалось обновить сообщение: {e}")
 
 async def tonprice_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     price, change = await get_ton_price()
@@ -148,10 +224,12 @@ async def tonprice_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     else:
         message = "Не удалось получить цену TON 😕"
 
-    await update.message.reply_text(message, parse_mode=ParseMode.HTML, disable_web_page_preview=True)
+    await update.message.reply_text(message, parse_mode=ParseMode.HTML, disable_web_page_preview=False)
 
 if __name__ == '__main__':
     app = ApplicationBuilder().token(BOT_TOKEN).build()
+    app.add_handler(CommandHandler("listings", listings_command))
     app.add_handler(CommandHandler("tonprice", tonprice_command))
+    app.add_handler(CallbackQueryHandler(button_callback))
     print("Бот запущен...")
     app.run_polling()
