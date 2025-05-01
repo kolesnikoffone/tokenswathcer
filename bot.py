@@ -137,11 +137,9 @@ async def fetch_tokens(sort_type: str, min_cap: float, limit: int = 40, paginate
                     timestamp = datetime.utcnow() + timedelta(hours=3)
                     formatted_time = timestamp.strftime("%d.%m.%Y %H:%M:%S")
                     return pages, formatted_time
-                else:
-                    return [], ""
     except Exception as e:
         logger.exception("Ошибка при обращении к BigPump API")
-        return [], ""
+    return [], ""
 
 async def listings_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     global latest_tokens_result
@@ -176,10 +174,8 @@ async def hots_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
             "timestamp": timestamp
         }
     else:
-        pages = [latest_hots_result.get("page")]
-        timestamp = latest_hots_result.get("timestamp")
-        if not pages or not pages[0]:
-            return
+        pages = [latest_hots_result.get("page") or "Нет данных"]
+        timestamp = latest_hots_result.get("timestamp") or ""
 
     message = f"{pages[0]}\n\nОбновлено: {timestamp} (UTC+3)"
     buttons = [InlineKeyboardButton("🔄 Обновить", callback_data="refresh_hots")]
@@ -197,10 +193,8 @@ async def refresh_hots_callback(update: Update, context: ContextTypes.DEFAULT_TY
             "timestamp": timestamp
         }
     else:
-        pages = [latest_hots_result.get("page")]
-        timestamp = latest_hots_result.get("timestamp")
-        if not pages or not pages[0]:
-            return
+        pages = [latest_hots_result.get("page") or "Нет данных"]
+        timestamp = latest_hots_result.get("timestamp") or ""
 
     message = f"{pages[0]}\n\nОбновлено: {timestamp} (UTC+3)"
     buttons = [InlineKeyboardButton("🔄 Обновить", callback_data="refresh_hots")]
