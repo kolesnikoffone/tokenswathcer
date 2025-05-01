@@ -137,9 +137,11 @@ async def fetch_tokens(sort_type: str, min_cap: float, limit: int = 40, paginate
                     timestamp = datetime.utcnow() + timedelta(hours=3)
                     formatted_time = timestamp.strftime("%d.%m.%Y %H:%M:%S")
                     return pages, formatted_time
+                else:
+                    return [], ""
     except Exception as e:
         logger.exception("Ошибка при обращении к BigPump API")
-    return [], ""
+        return [], ""
 
 async def listings_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     global latest_tokens_result
@@ -168,14 +170,16 @@ async def listings_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
 async def hots_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     global latest_hots_result
     pages, timestamp = await fetch_tokens("hot", 4000, limit=30, paginated=False)
-    if pages:
+    if pages and pages[0]:
         latest_hots_result = {
             "page": pages[0],
             "timestamp": timestamp
         }
     else:
-        pages = [latest_hots_result.get("page") or "Нет данных"]
-        timestamp = latest_hots_result.get("timestamp") or ""
+        pages = [latest_hots_result.get("page")]
+        timestamp = latest_hots_result.get("timestamp")
+        if not pages or not pages[0]:
+            return
 
     message = f"{pages[0]}\n\nОбновлено: {timestamp} (UTC+3)"
     buttons = [InlineKeyboardButton("🔄 Обновить", callback_data="refresh_hots")]
@@ -187,14 +191,16 @@ async def refresh_hots_callback(update: Update, context: ContextTypes.DEFAULT_TY
     query = update.callback_query
     await query.answer()
     pages, timestamp = await fetch_tokens("hot", 4000, limit=30, paginated=False)
-    if pages:
+    if pages and pages[0]:
         latest_hots_result = {
             "page": pages[0],
             "timestamp": timestamp
         }
     else:
-        pages = [latest_hots_result.get("page") or "Нет данных"]
-        timestamp = latest_hots_result.get("timestamp") or ""
+        pages = [latest_hots_result.get("page")]
+        timestamp = latest_hots_result.get("timestamp")
+        if not pages or not pages[0]:
+            return
 
     message = f"{pages[0]}\n\nОбновлено: {timestamp} (UTC+3)"
     buttons = [InlineKeyboardButton("🔄 Обновить", callback_data="refresh_hots")]
