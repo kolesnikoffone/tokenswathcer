@@ -37,7 +37,7 @@ async def get_ton_price():
                 if response.status == 200:
                     data = await response.json()
                     price = float(data["the-open-network"]["usd"])
-                    change = float(data["the-open-network"].get("usd_24hr_change", 0))
+                    change = float(data["the-open-network"].get("usd_24h_change", 0))
                     return price, change
     except Exception as e:
         logger.warning(f"Не удалось получить цену TON: {e}")
@@ -143,7 +143,6 @@ async def fetch_tokens(sort_type: str, min_cap: float, limit: int = 40, paginate
         logger.exception("Ошибка при обращении к BigPump API")
         return [f"Ошибка при запросе: {str(e)}"], ""
 
-
 async def listings_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     global latest_tokens_result
     pages, timestamp = await fetch_tokens("pocketfi", 11000)
@@ -165,7 +164,6 @@ async def listings_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     ]
     markup = InlineKeyboardMarkup([buttons])
     await update.message.reply_text(page_text, parse_mode=ParseMode.HTML, disable_web_page_preview=True, reply_markup=markup)
-
 
 async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
     global latest_tokens_result
@@ -217,7 +215,6 @@ async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
     except Exception as e:
         logger.warning(f"Не удалось обновить сообщение: {e}")
 
-
 async def tonprice_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     price, change = await get_ton_price()
     if price is not None:
@@ -240,7 +237,6 @@ async def tonprice_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     await update.message.reply_text(message, parse_mode=ParseMode.HTML, disable_web_page_preview=True)
 
-
 async def hots_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     global latest_hots_result
     pages, timestamp = await fetch_tokens("hot", 4000, limit=30, paginated=False)
@@ -257,7 +253,6 @@ async def hots_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     buttons = [InlineKeyboardButton("🔄 Обновить", callback_data="refresh_hots")]
     markup = InlineKeyboardMarkup([buttons])
     await update.message.reply_text(message, parse_mode=ParseMode.HTML, disable_web_page_preview=True, reply_markup=markup)
-
 
 async def refresh_hots_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
     global latest_hots_result
@@ -280,7 +275,6 @@ async def refresh_hots_callback(update: Update, context: ContextTypes.DEFAULT_TY
         await query.edit_message_text(text=message, parse_mode=ParseMode.HTML, disable_web_page_preview=True, reply_markup=markup)
     except Exception as e:
         logger.warning(f"Не удалось обновить HOTS сообщение: {e}")
-
 
 if __name__ == '__main__':
     app = ApplicationBuilder().token(BOT_TOKEN).build()
