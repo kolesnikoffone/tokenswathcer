@@ -19,7 +19,7 @@ logger = logging.getLogger(__name__)
 
 REFERRAL_PREFIX = "prghZZEt-"
 latest_tokens_result = {"pages": [], "timestamp": "", "last_page": 0}
-latest_hots_result = {"text": "", "timestamp": ""}
+latest_hots_result = {"message": "", "timestamp": ""}
 
 def address_to_base64url(address: str) -> str:
     return Address(address).to_str(
@@ -48,7 +48,7 @@ async def fetch_tokens(sort_type: str, min_cap: float, limit: int = 40, paginate
     headers = {
         'accept': '*/*',
         'accept-language': 'en-US,en;q=0.9,ru-RU;q=0.8,ru;q=0.7',
-        'authorization': os.getenv("BIGPUMP_TOKEN"),
+        'authorization': 'Bearer eyJhbGciOiJIUzI1NiJ9.eyJhZGRyZXNzIjoiMDpmNWI5MWRkZDBiOWM4N2VmNjUwMTFhNzlmMWRhNzE5NzIwYzVhODgwN2I1NGMxYTQwNTIyNzRmYTllMzc5YmNkIiwibmV0d29yayI6Ii0yMzkiLCJpYXQiOjE3NDI4MDY4NTMsImV4cCI6MTc3NDM2NDQ1M30.U_GaaX5psI572w4YmwAjlh8u4uFBVHdsD-zJacvWiPo',
         'origin': 'https://bigpump.app',
         'referer': 'https://bigpump.app/',
         'user-agent': 'Mozilla/5.0'
@@ -96,7 +96,7 @@ async def fetch_tokens(sort_type: str, min_cap: float, limit: int = 40, paginate
                                 try:
                                     encoded_address = address_to_base64url(address)
                                     link = f"https://t.me/tontrade?start={REFERRAL_PREFIX}{encoded_address}"
-                                    name_symbol = f'<a href="{link}">{name} ({symbol})</a>'
+                                    name_symbol = f"<a href=\"{link}\">{name} ({symbol})</a>"
                                 except:
                                     name_symbol = f'{name} ({symbol})'
                             else:
@@ -129,9 +129,9 @@ async def fetch_tokens(sort_type: str, min_cap: float, limit: int = 40, paginate
                                     emoji = "🤡"
                                 growth_str = f"{emoji} {growth:6.2f}%"
                             except:
-                                growth_str = "0️⃣   0.00%"
+                                growth_str = "0️⃣  0.00%"
 
-                            line = f"{idx}. {growth_str} | {name_symbol} | <b>{mcap}</b>"
+                            line = f"{idx}. {growth_str} | {name_symbol} | {mcap}"
                             result.append(line)
                         pages.append("\n".join(result))
 
@@ -242,10 +242,11 @@ async def hots_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     global latest_hots_result
     pages, timestamp = await fetch_tokens("hot", 4000, limit=30, paginated=False)
     if pages:
-        latest_hots_result = {"text": pages[0], "timestamp": timestamp}
+        latest_hots_result = {"message": pages[0], "timestamp": timestamp}
     else:
-        pages = [latest_hots_result.get("text")]
-        timestamp = latest_hots_result.get("timestamp")
+        pages = [latest_hots_result.get("message", "Нет данных")]
+        timestamp = latest_hots_result.get("timestamp", "")
+
     buttons = [InlineKeyboardButton("🔄 Обновить", callback_data="refresh_hots")]
     markup = InlineKeyboardMarkup([buttons])
     message = f"{pages[0]}\n\nОбновлено: {timestamp} (UTC+3)"
@@ -257,10 +258,11 @@ async def refresh_hots_callback(update: Update, context: ContextTypes.DEFAULT_TY
     await query.answer()
     pages, timestamp = await fetch_tokens("hot", 4000, limit=30, paginated=False)
     if pages:
-        latest_hots_result = {"text": pages[0], "timestamp": timestamp}
+        latest_hots_result = {"message": pages[0], "timestamp": timestamp}
     else:
-        pages = [latest_hots_result.get("text")]
-        timestamp = latest_hots_result.get("timestamp")
+        pages = [latest_hots_result.get("message", "Нет данных")]
+        timestamp = latest_hots_result.get("timestamp", "")
+
     message = f"{pages[0]}\n\nОбновлено: {timestamp} (UTC+3)"
     buttons = [InlineKeyboardButton("🔄 Обновить", callback_data="refresh_hots")]
     markup = InlineKeyboardMarkup([buttons])
