@@ -19,6 +19,7 @@ logger = logging.getLogger(__name__)
 
 REFERRAL_PREFIX = "prghZZEt-"
 latest_tokens_result = {"pages": [], "timestamp": "", "last_page": 0}
+latest_hots = []
 
 
 def address_to_base64url(address: str) -> str:
@@ -45,7 +46,7 @@ async def get_ton_price():
     return None, 0
 
 
-async def get_tokens(sort_type="pocketfi", limit=40, min_cap=11000, max_items=None, linebreaks=True):
+async def fetch_tokens(sort_type: str, min_cap: float, limit: int = 40, paginated: bool = True):
     url = f'https://prod-api.bigpump.app/api/v1/coins?sortType={sort_type}&limit={limit}'
     headers = {
         'accept': '*/*',
@@ -63,7 +64,6 @@ async def get_tokens(sort_type="pocketfi", limit=40, min_cap=11000, max_items=No
                     data = await response.json()
                     tokens = data.get('coins', [])
                     ton_usd_price, _ = await get_ton_price()
-                    pages = []
                     filtered = []
                     for token in tokens:
                         try:
@@ -73,21 +73,25 @@ async def get_tokens(sort_type="pocketfi", limit=40, min_cap=11000, max_items=No
                         except:
                             continue
 
-                    if max_items:
-                        filtered = filtered[:max_items]
+                    pages = []
+                    if paginated:
+                        ranges = range(0, len(filtered), 10)
+                    else:
+                        ranges = [0]
 
-                    for i in range(0, len(filtered), 10):
+                    for i in ranges:
                         result = []
-                        for idx, (token, cap) in enumerate(filtered[i:i+10], i+1):
+                        subset = filtered[i:i+10] if paginated else filtered[:10]
+                        for idx, (token, cap) in enumerate(subset, i + 1):
                             name = token.get('name', 'N/A')
                             symbol = token.get('symbol', 'N/A')
                             address = token.get('address')
                             change = token.get('priceChange1H')
 
                             if cap >= 1_000_000:
-                                mcap = f"<b>${cap/1e6:.1f}M</b>"
+                                mcap = f"<b>${cap / 1_000_000:.1f}M</b>"
                             elif cap >= 1_000:
-                                mcap = f"<b>${cap/1000:.1f}K</b>"
+                                mcap = f"<b>${cap / 1_000:.1f}K</b>"
                             else:
                                 mcap = f"<b>${cap:.2f}</b>"
 
@@ -101,6 +105,7 @@ async def get_tokens(sort_type="pocketfi", limit=40, min_cap=11000, max_items=No
                             else:
                                 name_symbol = f'{name} ({symbol})'
 
+                            emoji = ""
                             try:
                                 growth = float(change)
                                 if growth >= 100:
@@ -131,7 +136,7 @@ async def get_tokens(sort_type="pocketfi", limit=40, min_cap=11000, max_items=No
 
                             line = f"{idx}. {name_symbol} | {mcap} | {growth_str}"
                             result.append(line)
-                        pages.append("\n\n".join(result) if linebreaks else "\n".join(result))
+                        pages.append("\n".join(result))
 
                     timestamp = datetime.utcnow() + timedelta(hours=3)
                     formatted_time = timestamp.strftime("%d.%m.%Y %H:%M:%S")
@@ -145,7 +150,7 @@ async def get_tokens(sort_type="pocketfi", limit=40, min_cap=11000, max_items=No
 
 async def listings_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     global latest_tokens_result
-    pages, timestamp = await get_tokens()
+    pages, timestamp = await fetch_tokens("pocketfi", 11000)
     if pages:
         latest_tokens_result = {
             "pages": pages,
@@ -156,11 +161,7 @@ async def listings_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         pages = latest_tokens_result.get("pages")
         timestamp = latest_tokens_result.get("timestamp")
 
-    if not pages:
-        await update.message.reply_text("Нет данных для отображения.")
-        return
-
-    page_idx = latest_tokens_result.get("last_page", 0)
+    page_idx = 0
     page_text = f"{pages[page_idx]}\n\nОбновлено: {timestamp} (UTC+3) | ID: {page_idx + 1}"
     buttons = [
         InlineKeyboardButton("🔄 Обновить", callback_data="refresh"),
@@ -180,12 +181,12 @@ async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return
 
     if data == "refresh":
-        pages, timestamp = await get_tokens()
+        pages, timestamp = await fetch_tokens("pocketfi", 11000)
         if pages:
             latest_tokens_result = {
                 "pages": pages,
                 "timestamp": timestamp,
-                "last_page": latest_tokens_result["last_page"]
+                "last_page": 0
             }
         else:
             pages = latest_tokens_result.get("pages")
@@ -205,7 +206,7 @@ async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return
 
     page_text = f"{pages[page_idx]}\n\nОбновлено: {timestamp} (UTC+3) | ID: {page_idx + 1}"
-    if len(pages) > 1:
+    if len(latest_tokens_result["pages"]) > 1:
         nav_button = InlineKeyboardButton("⬅️" if page_idx else "➡️", callback_data="prev" if page_idx else "next")
         buttons = [
             InlineKeyboardButton("🔄 Обновить", callback_data="refresh"),
@@ -213,6 +214,7 @@ async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
         ]
     else:
         buttons = [InlineKeyboardButton("🔄 Обновить", callback_data="refresh")]
+
     markup = InlineKeyboardMarkup([buttons])
     try:
         await query.edit_message_text(page_text, parse_mode=ParseMode.HTML, disable_web_page_preview=True, reply_markup=markup)
@@ -235,22 +237,37 @@ async def tonprice_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
             emoji = "📉"
         else:
             emoji = "💥"
+
         message = f"{emoji} <b>TON:</b> ${price:.4f} ({change:+.2f}%)"
     else:
         message = "Не удалось получить цену TON 😕"
+
     await update.message.reply_text(message, parse_mode=ParseMode.HTML, disable_web_page_preview=True)
 
 
 async def hots_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    pages, timestamp = await get_tokens(sort_type="hot", limit=20, min_cap=4000, max_items=10, linebreaks=False)
-    if pages:
-        text = f"{pages[0]}\n\nОбновлено: {timestamp} (UTC+3)"
-        markup = InlineKeyboardMarkup([
-            [InlineKeyboardButton("🔄 Обновить", callback_data="refresh_hots")]
-        ])
-        await update.message.reply_text(text, parse_mode=ParseMode.HTML, disable_web_page_preview=True, reply_markup=markup)
-    else:
-        await update.message.reply_text("Не удалось загрузить горячие токены.")
+    pages, timestamp = await fetch_tokens("hot", 4000, limit=30, paginated=False)
+    if not pages:
+        return
+    buttons = [InlineKeyboardButton("🔄 Обновить", callback_data="refresh_hots")]
+    markup = InlineKeyboardMarkup([buttons])
+    message = f"{pages[0]}\n\nОбновлено: {timestamp} (UTC+3)"
+    await update.message.reply_text(message, parse_mode=ParseMode.HTML, disable_web_page_preview=True, reply_markup=markup)
+
+
+async def refresh_hots_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    query = update.callback_query
+    await query.answer()
+    pages, timestamp = await fetch_tokens("hot", 4000, limit=30, paginated=False)
+    if not pages:
+        return
+    message = f"{pages[0]}\n\nОбновлено: {timestamp} (UTC+3)"
+    buttons = [InlineKeyboardButton("🔄 Обновить", callback_data="refresh_hots")]
+    markup = InlineKeyboardMarkup([buttons])
+    try:
+        await query.edit_message_text(text=message, parse_mode=ParseMode.HTML, disable_web_page_preview=True, reply_markup=markup)
+    except Exception as e:
+        logger.warning(f"Не удалось обновить HOTS сообщение: {e}")
 
 
 if __name__ == '__main__':
@@ -258,6 +275,7 @@ if __name__ == '__main__':
     app.add_handler(CommandHandler("listings", listings_command))
     app.add_handler(CommandHandler("tonprice", tonprice_command))
     app.add_handler(CommandHandler("hots", hots_command))
-    app.add_handler(CallbackQueryHandler(button_callback))
+    app.add_handler(CallbackQueryHandler(button_callback, pattern="^(refresh|next|prev)$"))
+    app.add_handler(CallbackQueryHandler(refresh_hots_callback, pattern="^refresh_hots$"))
     print("Бот запущен...")
     app.run_polling()
