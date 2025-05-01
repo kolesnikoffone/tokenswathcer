@@ -48,7 +48,7 @@ async def fetch_tokens(sort_type: str, min_cap: float, limit: int = 40, paginate
     headers = {
         'accept': '*/*',
         'accept-language': 'en-US,en;q=0.9,ru-RU;q=0.8,ru;q=0.7',
-        'authorization': os.getenv("BIGPUMP_API_KEY"),
+        'authorization': 'Bearer eyJhbGciOiJIUzI1NiJ9.eyJhZGRyZXNzIjoiMDpmNWI5MWRkZDBiOWM4N2VmNjUwMTFhNzlmMWRhNzE5NzIwYzVhODgwN2I1NGMxYTQwNTIyNzRmYTllMzc5YmNkIiwibmV0d29yayI6Ii0yMzkiLCJpYXQiOjE3NDI4MDY4NTMsImV4cCI6MTc3NDM2NDQ1M30.U_GaaX5psI572w4YmwAjlh8u4uFBVHdsD-zJacvWiPo',
         'origin': 'https://bigpump.app',
         'referer': 'https://bigpump.app/',
         'user-agent': 'Mozilla/5.0'
@@ -86,11 +86,11 @@ async def fetch_tokens(sort_type: str, min_cap: float, limit: int = 40, paginate
                             change = token.get('priceChange1H')
 
                             if cap >= 1_000_000:
-                                mcap = f"${cap / 1_000_000:.1f}M"
+                                mcap = f"<b>${cap / 1_000_000:.1f}M</b>"
                             elif cap >= 1_000:
-                                mcap = f"${cap / 1_000:.1f}K"
+                                mcap = f"<b>${cap / 1_000:.1f}K</b>"
                             else:
-                                mcap = f"${cap:.2f}"
+                                mcap = f"<b>${cap:.2f}</b>"
 
                             if address:
                                 try:
@@ -143,6 +143,7 @@ async def fetch_tokens(sort_type: str, min_cap: float, limit: int = 40, paginate
         logger.exception("Ошибка при обращении к BigPump API")
         return [f"Ошибка при запросе: {str(e)}"], ""
 
+
 async def listings_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     global latest_tokens_result
     pages, timestamp = await fetch_tokens("pocketfi", 11000)
@@ -164,6 +165,7 @@ async def listings_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     ]
     markup = InlineKeyboardMarkup([buttons])
     await update.message.reply_text(page_text, parse_mode=ParseMode.HTML, disable_web_page_preview=True, reply_markup=markup)
+
 
 async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
     global latest_tokens_result
@@ -215,6 +217,7 @@ async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
     except Exception as e:
         logger.warning(f"Не удалось обновить сообщение: {e}")
 
+
 async def tonprice_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     price, change = await get_ton_price()
     if price is not None:
@@ -237,6 +240,7 @@ async def tonprice_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     await update.message.reply_text(message, parse_mode=ParseMode.HTML, disable_web_page_preview=True)
 
+
 async def hots_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     global latest_hots_result
     pages, timestamp = await fetch_tokens("hot", 4000, limit=30, paginated=False)
@@ -246,13 +250,14 @@ async def hots_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
             "timestamp": timestamp
         }
     else:
-        pages = [latest_hots_result.get("page", "")]
-        timestamp = latest_hots_result.get("timestamp", "")
+        pages = [latest_hots_result.get("page")]
+        timestamp = latest_hots_result.get("timestamp")
 
+    message = f"{pages[0]}\n\nОбновлено: {timestamp} (UTC+3)"
     buttons = [InlineKeyboardButton("🔄 Обновить", callback_data="refresh_hots")]
     markup = InlineKeyboardMarkup([buttons])
-    message = f"{pages[0]}\n\nОбновлено: {timestamp} (UTC+3)"
     await update.message.reply_text(message, parse_mode=ParseMode.HTML, disable_web_page_preview=True, reply_markup=markup)
+
 
 async def refresh_hots_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
     global latest_hots_result
@@ -265,8 +270,8 @@ async def refresh_hots_callback(update: Update, context: ContextTypes.DEFAULT_TY
             "timestamp": timestamp
         }
     else:
-        pages = [latest_hots_result.get("page", "")]
-        timestamp = latest_hots_result.get("timestamp", "")
+        pages = [latest_hots_result.get("page")]
+        timestamp = latest_hots_result.get("timestamp")
 
     message = f"{pages[0]}\n\nОбновлено: {timestamp} (UTC+3)"
     buttons = [InlineKeyboardButton("🔄 Обновить", callback_data="refresh_hots")]
@@ -275,6 +280,7 @@ async def refresh_hots_callback(update: Update, context: ContextTypes.DEFAULT_TY
         await query.edit_message_text(text=message, parse_mode=ParseMode.HTML, disable_web_page_preview=True, reply_markup=markup)
     except Exception as e:
         logger.warning(f"Не удалось обновить HOTS сообщение: {e}")
+
 
 if __name__ == '__main__':
     app = ApplicationBuilder().token(BOT_TOKEN).build()
