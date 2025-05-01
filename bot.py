@@ -19,7 +19,7 @@ logger = logging.getLogger(__name__)
 
 REFERRAL_PREFIX = "prghZZEt-"
 latest_tokens_result = {"pages": [], "timestamp": "", "last_page": 0}
-hots_result = {"text": "", "timestamp": ""}
+
 
 def address_to_base64url(address: str) -> str:
     return Address(address).to_str(
@@ -29,6 +29,7 @@ def address_to_base64url(address: str) -> str:
         is_url_safe=True
     )
 
+
 async def get_ton_price():
     url = 'https://api.coingecko.com/api/v3/simple/price?ids=the-open-network&vs_currencies=usd&include_24hr_change=true'
     try:
@@ -37,13 +38,14 @@ async def get_ton_price():
                 if response.status == 200:
                     data = await response.json()
                     price = float(data["the-open-network"]["usd"])
-                    change = float(data["the-open-network"].get("usd_24hr_change", 0))
+                    change = float(data["the-open-network"].get("usd_24h_change", 0))
                     return price, change
     except Exception as e:
         logger.warning(f"Не удалось получить цену TON: {e}")
     return None, 0
 
-async def get_tokens(sort_type="pocketfi", limit=40, cap_threshold=11000, page_size=10):
+
+async def get_tokens(sort_type="pocketfi", limit=40, min_cap=11000, max_items=None, linebreaks=True):
     url = f'https://prod-api.bigpump.app/api/v1/coins?sortType={sort_type}&limit={limit}'
     headers = {
         'accept': '*/*',
@@ -66,19 +68,28 @@ async def get_tokens(sort_type="pocketfi", limit=40, cap_threshold=11000, page_s
                     for token in tokens:
                         try:
                             cap = float(token.get("marketCap", 0)) * ton_usd_price / 1e9
-                            if cap >= cap_threshold:
+                            if cap >= min_cap:
                                 filtered.append((token, cap))
                         except:
                             continue
 
-                    for i in range(0, len(filtered), page_size):
+                    if max_items:
+                        filtered = filtered[:max_items]
+
+                    for i in range(0, len(filtered), 10):
                         result = []
-                        for idx, (token, cap) in enumerate(filtered[i:i+page_size], i+1):
+                        for idx, (token, cap) in enumerate(filtered[i:i+10], i+1):
                             name = token.get('name', 'N/A')
                             symbol = token.get('symbol', 'N/A')
                             address = token.get('address')
                             change = token.get('priceChange1H')
-                            mcap = f"<b>${cap/1000:.1f}K</b>" if cap >= 1_000 else f"<b>${cap:.2f}</b>"
+
+                            if cap >= 1_000_000:
+                                mcap = f"<b>${cap/1e6:.1f}M</b>"
+                            elif cap >= 1_000:
+                                mcap = f"<b>${cap/1000:.1f}K</b>"
+                            else:
+                                mcap = f"<b>${cap:.2f}</b>"
 
                             if address:
                                 try:
@@ -90,7 +101,6 @@ async def get_tokens(sort_type="pocketfi", limit=40, cap_threshold=11000, page_s
                             else:
                                 name_symbol = f'{name} ({symbol})'
 
-                            emoji = ""
                             try:
                                 growth = float(change)
                                 if growth >= 100:
@@ -121,7 +131,7 @@ async def get_tokens(sort_type="pocketfi", limit=40, cap_threshold=11000, page_s
 
                             line = f"{idx}. {name_symbol} | {mcap} | {growth_str}"
                             result.append(line)
-                        pages.append("\n".join(result))
+                        pages.append("\n\n".join(result) if linebreaks else "\n".join(result))
 
                     timestamp = datetime.utcnow() + timedelta(hours=3)
                     formatted_time = timestamp.strftime("%d.%m.%Y %H:%M:%S")
@@ -131,6 +141,7 @@ async def get_tokens(sort_type="pocketfi", limit=40, cap_threshold=11000, page_s
     except Exception as e:
         logger.exception("Ошибка при обращении к BigPump API")
         return [f"Ошибка при запросе: {str(e)}"], ""
+
 
 async def listings_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     global latest_tokens_result
@@ -145,7 +156,11 @@ async def listings_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         pages = latest_tokens_result.get("pages")
         timestamp = latest_tokens_result.get("timestamp")
 
-    page_idx = 0
+    if not pages:
+        await update.message.reply_text("Нет данных для отображения.")
+        return
+
+    page_idx = latest_tokens_result.get("last_page", 0)
     page_text = f"{pages[page_idx]}\n\nОбновлено: {timestamp} (UTC+3) | ID: {page_idx + 1}"
     buttons = [
         InlineKeyboardButton("🔄 Обновить", callback_data="refresh"),
@@ -154,25 +169,15 @@ async def listings_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     markup = InlineKeyboardMarkup([buttons])
     await update.message.reply_text(page_text, parse_mode=ParseMode.HTML, disable_web_page_preview=True, reply_markup=markup)
 
-async def hots_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    global hots_result
-    pages, timestamp = await get_tokens(sort_type="hot", limit=30, cap_threshold=4000, page_size=10)
-    if pages:
-        hots_result = {
-            "text": pages[0],
-            "timestamp": timestamp
-        }
-    else:
-        return
-    text = f"{hots_result['text']}\n\nОбновлено: {timestamp} (UTC+3)"
-    markup = InlineKeyboardMarkup([[InlineKeyboardButton("🔄 Обновить", callback_data="refresh_hots")]])
-    await update.message.reply_text(text, parse_mode=ParseMode.HTML, disable_web_page_preview=True, reply_markup=markup)
 
 async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    global latest_tokens_result, hots_result
+    global latest_tokens_result
     query = update.callback_query
     await query.answer()
     data = query.data
+
+    if not latest_tokens_result["pages"]:
+        return
 
     if data == "refresh":
         pages, timestamp = await get_tokens()
@@ -180,7 +185,7 @@ async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
             latest_tokens_result = {
                 "pages": pages,
                 "timestamp": timestamp,
-                "last_page": 0
+                "last_page": latest_tokens_result["last_page"]
             }
         else:
             pages = latest_tokens_result.get("pages")
@@ -191,19 +196,11 @@ async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
         latest_tokens_result["last_page"] = page_idx
         pages = latest_tokens_result["pages"]
         timestamp = latest_tokens_result["timestamp"]
-    elif data == "refresh_hots":
-        pages, timestamp = await get_tokens(sort_type="hot", limit=30, cap_threshold=4000, page_size=10)
-        if pages:
-            hots_result = {
-                "text": pages[0],
-                "timestamp": timestamp
-            }
-        else:
-            return
-        text = f"{hots_result['text']}\n\nОбновлено: {timestamp} (UTC+3)"
-        markup = InlineKeyboardMarkup([[InlineKeyboardButton("🔄 Обновить", callback_data="refresh_hots")]])
-        await query.edit_message_text(text, parse_mode=ParseMode.HTML, disable_web_page_preview=True, reply_markup=markup)
-        return
+    elif data == "prev":
+        page_idx = (latest_tokens_result["last_page"] - 1) % len(latest_tokens_result["pages"])
+        latest_tokens_result["last_page"] = page_idx
+        pages = latest_tokens_result["pages"]
+        timestamp = latest_tokens_result["timestamp"]
     else:
         return
 
@@ -216,12 +213,12 @@ async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
         ]
     else:
         buttons = [InlineKeyboardButton("🔄 Обновить", callback_data="refresh")]
-
     markup = InlineKeyboardMarkup([buttons])
     try:
         await query.edit_message_text(page_text, parse_mode=ParseMode.HTML, disable_web_page_preview=True, reply_markup=markup)
     except Exception as e:
         logger.warning(f"Не удалось обновить сообщение: {e}")
+
 
 async def tonprice_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     price, change = await get_ton_price()
@@ -238,12 +235,23 @@ async def tonprice_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
             emoji = "📉"
         else:
             emoji = "💥"
-
         message = f"{emoji} <b>TON:</b> ${price:.4f} ({change:+.2f}%)"
     else:
         message = "Не удалось получить цену TON 😕"
-
     await update.message.reply_text(message, parse_mode=ParseMode.HTML, disable_web_page_preview=True)
+
+
+async def hots_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    pages, timestamp = await get_tokens(sort_type="hot", limit=20, min_cap=4000, max_items=10, linebreaks=False)
+    if pages:
+        text = f"{pages[0]}\n\nОбновлено: {timestamp} (UTC+3)"
+        markup = InlineKeyboardMarkup([
+            [InlineKeyboardButton("🔄 Обновить", callback_data="refresh_hots")]
+        ])
+        await update.message.reply_text(text, parse_mode=ParseMode.HTML, disable_web_page_preview=True, reply_markup=markup)
+    else:
+        await update.message.reply_text("Не удалось загрузить горячие токены.")
+
 
 if __name__ == '__main__':
     app = ApplicationBuilder().token(BOT_TOKEN).build()
