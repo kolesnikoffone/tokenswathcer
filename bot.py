@@ -64,6 +64,9 @@ async def fetch_tokens(sort_type: str, min_cap: float, limit: int = 40, paginate
                     filtered = []
                     for token in tokens:
                         try:
+                            change = float(token.get("priceChange1H", 0))
+                            if sort_type == "hot" and abs(change) < 2:
+                                continue
                             cap = float(token.get("marketCap", 0)) * ton_usd_price / 1e9
                             if cap >= min_cap:
                                 filtered.append((token, cap))
