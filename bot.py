@@ -19,7 +19,7 @@ logger = logging.getLogger(__name__)
 
 REFERRAL_PREFIX = "prghZZEt-"
 latest_tokens_result = {"pages": [], "timestamp": "", "last_page": 0}
-latest_hots_result = {"message": "", "timestamp": ""}
+latest_hots = {"text": "", "timestamp": ""}
 
 def address_to_base64url(address: str) -> str:
     return Address(address).to_str(
@@ -96,7 +96,7 @@ async def fetch_tokens(sort_type: str, min_cap: float, limit: int = 40, paginate
                                 try:
                                     encoded_address = address_to_base64url(address)
                                     link = f"https://t.me/tontrade?start={REFERRAL_PREFIX}{encoded_address}"
-                                    name_symbol = f"<a href=\"{link}\">{name} ({symbol})</a>"
+                                    name_symbol = f"{name} ({symbol}) ({link})"
                                 except:
                                     name_symbol = f'{name} ({symbol})'
                             else:
@@ -239,13 +239,13 @@ async def tonprice_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text(message, parse_mode=ParseMode.HTML, disable_web_page_preview=True)
 
 async def hots_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    global latest_hots_result
+    global latest_hots
     pages, timestamp = await fetch_tokens("hot", 4000, limit=30, paginated=False)
     if pages:
-        latest_hots_result = {"message": pages[0], "timestamp": timestamp}
+        latest_hots = {"text": pages[0], "timestamp": timestamp}
     else:
-        pages = [latest_hots_result.get("message", "Нет данных")]
-        timestamp = latest_hots_result.get("timestamp", "")
+        pages = [latest_hots.get("text") or "Нет данных"]
+        timestamp = latest_hots.get("timestamp")
 
     buttons = [InlineKeyboardButton("🔄 Обновить", callback_data="refresh_hots")]
     markup = InlineKeyboardMarkup([buttons])
@@ -253,15 +253,15 @@ async def hots_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text(message, parse_mode=ParseMode.HTML, disable_web_page_preview=True, reply_markup=markup)
 
 async def refresh_hots_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    global latest_hots_result
+    global latest_hots
     query = update.callback_query
     await query.answer()
     pages, timestamp = await fetch_tokens("hot", 4000, limit=30, paginated=False)
     if pages:
-        latest_hots_result = {"message": pages[0], "timestamp": timestamp}
+        latest_hots = {"text": pages[0], "timestamp": timestamp}
     else:
-        pages = [latest_hots_result.get("message", "Нет данных")]
-        timestamp = latest_hots_result.get("timestamp", "")
+        pages = [latest_hots.get("text") or "Нет данных"]
+        timestamp = latest_hots.get("timestamp")
 
     message = f"{pages[0]}\n\nОбновлено: {timestamp} (UTC+3)"
     buttons = [InlineKeyboardButton("🔄 Обновить", callback_data="refresh_hots")]
