@@ -44,6 +44,8 @@ async def get_ton_price():
     return None, 0
 
 async def fetch_tokens(sort_type: str, min_cap: float, limit: int = 40, paginated: bool = True):
+    if sort_type == "hot":
+        limit = 60  # increase for HOT sort type
     url = f'https://prod-api.bigpump.app/api/v1/coins?sortType={sort_type}&limit={limit}'
     headers = {
         'accept': '*/*',
@@ -65,9 +67,12 @@ async def fetch_tokens(sort_type: str, min_cap: float, limit: int = 40, paginate
                     for token in tokens:
                         try:
                             change = float(token.get("priceChange1H", 0))
-                            if sort_type == "hot" and abs(change) < 2:
-                                continue
                             cap = float(token.get("marketCap", 0)) * ton_usd_price / 1e9
+                            if sort_type == "hot":
+                                if abs(change) < 2:
+                                    continue
+                                if cap >= 1_000_000:
+                                    continue
                             if cap >= min_cap:
                                 filtered.append((token, cap))
                         except:
@@ -145,7 +150,7 @@ async def fetch_tokens(sort_type: str, min_cap: float, limit: int = 40, paginate
     except Exception as e:
         logger.exception("Ошибка при обращении к BigPump API")
         return [], ""
-
+        
 async def listings_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     global latest_tokens_result
     pages, timestamp = await fetch_tokens("pocketfi", 11000)
