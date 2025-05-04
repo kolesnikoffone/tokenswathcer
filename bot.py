@@ -70,7 +70,11 @@ async def fetch_tokens(sort_type: str, min_cap: float, limit: int = 40, paginate
                         try:
                             change = float(token.get("priceChange1H", 0))
                             cap = float(token.get("marketCap", 0)) * ton_usd_price / 1e9
-                            holders = int(token.get("holders", 0))  # Получаем количество холдеров
+                            holders_raw = token.get("holders")
+                            try:
+                                holders = int(holders_raw)
+                            except (TypeError, ValueError):
+                                holders = 0
                             if sort_type == "hot":
                                 if abs(change) < 2:
                                     continue
