@@ -308,7 +308,7 @@ if __name__ == '__main__':
     app.add_handler(CommandHandler("hots", hots_command))
     app.add_handler(CallbackQueryHandler(button_callback, pattern="^(refresh|next|prev)$"))
     app.add_handler(CallbackQueryHandler(refresh_hots_callback, pattern="^refresh_hots$"))
-    app.job_queue.run_repeating(auto_update_hots, interval=300, first=10)
+    app.job_queue.run_repeating(auto_update_hots, interval=60, first=10)
     app.job_queue.run_repeating(auto_update_listings, interval=60, first=15)
     print("Бот запущен...")
     app.run_polling()
