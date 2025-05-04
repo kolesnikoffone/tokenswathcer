@@ -4,7 +4,7 @@ import aiohttp
 from pytoniq_core import Address
 from telegram import InlineKeyboardButton, InlineKeyboardMarkup, Update
 from telegram.constants import ParseMode
-from telegram.ext import ApplicationBuilder, CommandHandler, CallbackQueryHandler, ContextTypes
+from telegram.ext import ApplicationBuilder, CommandHandler, CallbackQueryHandler, ContextTypes, JobQueue
 from datetime import datetime, timedelta
 
 BOT_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN")
@@ -20,6 +20,7 @@ logger = logging.getLogger(__name__)
 REFERRAL_PREFIX = "prghZZEt-"
 latest_tokens_result = {"pages": [], "timestamp": "", "last_page": 0}
 latest_hots_result = {"page": "", "timestamp": ""}
+pinned_hots_messages = {}
 
 def address_to_base64url(address: str) -> str:
     return Address(address).to_str(
@@ -45,7 +46,7 @@ async def get_ton_price():
 
 async def fetch_tokens(sort_type: str, min_cap: float, limit: int = 40, paginated: bool = True):
     if sort_type == "hot":
-        limit = 60  # increase for HOT sort type
+        limit = 60
     url = f'https://prod-api.bigpump.app/api/v1/coins?sortType={sort_type}&limit={limit}'
     headers = {
         'accept': '*/*',
