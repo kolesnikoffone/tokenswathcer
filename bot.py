@@ -81,14 +81,13 @@ async def fetch_tokens(sort_type: str, min_cap: float, limit: int = 40, paginate
                                 continue
                             if cap >= 1_000_000:
                                 continue
-                            if holders < 12:
+                            if holders < 10:
                                 continue
-
-        if cap >= min_cap:
-            filtered.append((token, cap))
-    except Exception as e:
-        logger.warning(f"Ошибка фильтрации токена: {e}")
-        continue
+                
+                        if cap >= min_cap:
+                            filtered.append((token, cap))
+                    except:
+                        continue
 
                     pages = []
                     if paginated:
