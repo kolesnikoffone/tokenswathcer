@@ -21,6 +21,7 @@ REFERRAL_PREFIX = "prghZZEt-"
 latest_tokens_result = {"pages": [], "timestamp": "", "last_page": 0}
 latest_hots_result = {"page": "", "timestamp": ""}
 pinned_hots_messages = {}
+pinned_listings_messages = {}
 
 def address_to_base64url(address: str) -> str:
     return Address(address).to_str(
@@ -113,28 +114,7 @@ async def fetch_tokens(sort_type: str, min_cap: float, limit: int = 40, paginate
 
                             try:
                                 growth = float(change)
-                                if growth >= 100:
-                                    emoji = "💎"
-                                elif growth >= 50:
-                                    emoji = "🤑"
-                                elif growth >= 25:
-                                    emoji = "🚀"
-                                elif growth >= 10:
-                                    emoji = "💸"
-                                elif growth >= 5:
-                                    emoji = "📈"
-                                elif growth > 0:
-                                    emoji = "🥹"
-                                elif growth > -1:
-                                    emoji = "🫥"
-                                elif growth > -5:
-                                    emoji = "📉"
-                                elif growth > -10:
-                                    emoji = "💔"
-                                elif growth > -25:
-                                    emoji = "😭"
-                                else:
-                                    emoji = "🤡"
+                                emoji = "💎" if growth >= 100 else "🤑" if growth >= 50 else "🚀" if growth >= 25 else "💸" if growth >= 10 else "📈" if growth >= 5 else "🥹" if growth > 0 else "🫥" if growth > -1 else "📉" if growth > -5 else "💔" if growth > -10 else "😭" if growth > -25 else "🤡"
                                 growth_str = f"{emoji} {growth:+.2f}%"
                             except:
                                 growth_str = "🫥 0.00%"
@@ -151,9 +131,9 @@ async def fetch_tokens(sort_type: str, min_cap: float, limit: int = 40, paginate
     except Exception as e:
         logger.exception("Ошибка при обращении к BigPump API")
         return [], ""
-        
+
 async def listings_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    global latest_tokens_result
+    global latest_tokens_result, pinned_listings_messages
     pages, timestamp = await fetch_tokens("pocketfi", 11000)
     if pages:
         latest_tokens_result = {
@@ -174,10 +154,15 @@ async def listings_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         InlineKeyboardButton("➡️", callback_data="next")
     ]
     markup = InlineKeyboardMarkup([buttons])
-    await update.message.reply_text(page_text, parse_mode=ParseMode.HTML, disable_web_page_preview=True, reply_markup=markup)
+    sent = await update.message.reply_text(page_text, parse_mode=ParseMode.HTML, disable_web_page_preview=True, reply_markup=markup)
+    try:
+        await context.bot.pin_chat_message(chat_id=sent.chat_id, message_id=sent.message_id)
+        pinned_listings_messages[sent.chat_id] = sent.message_id
+    except Exception as e:
+        logger.warning(f"Не удалось закрепить LISTINGS сообщение: {e}")
 
 async def hots_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    global latest_hots_result
+    global latest_hots_result, pinned_hots_messages
     pages, timestamp = await fetch_tokens("hot", 4000, limit=30, paginated=False)
     if pages and pages[0]:
         latest_hots_result = {
@@ -193,7 +178,58 @@ async def hots_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     message = f"{pages[0]}\n\nОбновлено: {timestamp} (UTC+3)"
     buttons = [InlineKeyboardButton("🔄 Обновить", callback_data="refresh_hots")]
     markup = InlineKeyboardMarkup([buttons])
-    await update.message.reply_text(message, parse_mode=ParseMode.HTML, disable_web_page_preview=True, reply_markup=markup)
+    sent = await update.message.reply_text(message, parse_mode=ParseMode.HTML, disable_web_page_preview=True, reply_markup=markup)
+
+    try:
+        await context.bot.pin_chat_message(chat_id=sent.chat_id, message_id=sent.message_id)
+        pinned_hots_messages[sent.chat_id] = sent.message_id
+    except Exception as e:
+        logger.warning(f"Не удалось закрепить сообщение: {e}")
+
+async def auto_update_hots(context: ContextTypes.DEFAULT_TYPE):
+    global latest_hots_result, pinned_hots_messages
+    chats_to_remove = []
+    for chat_id, message_id in pinned_hots_messages.items():
+        try:
+            pages, timestamp = await fetch_tokens("hot", 4000, limit=30, paginated=False)
+            if not pages or not pages[0]:
+                continue
+            latest_hots_result = {
+                "page": pages[0],
+                "timestamp": timestamp
+            }
+            message = f"{pages[0]}\n\nОбновлено: {timestamp} (UTC+3)"
+            buttons = [InlineKeyboardButton("🔄 Обновить", callback_data="refresh_hots")]
+            markup = InlineKeyboardMarkup([buttons])
+            await context.bot.edit_message_text(chat_id=chat_id, message_id=message_id, text=message, parse_mode=ParseMode.HTML, disable_web_page_preview=True, reply_markup=markup)
+        except Exception as e:
+            logger.warning(f"Ошибка автообновления в чате {chat_id}: {e}")
+            chats_to_remove.append(chat_id)
+    for chat_id in chats_to_remove:
+        pinned_hots_messages.pop(chat_id, None)
+
+async def auto_update_listings(context: ContextTypes.DEFAULT_TYPE):
+    global latest_tokens_result, pinned_listings_messages
+    pages, timestamp = await fetch_tokens("pocketfi", 11000)
+    if not pages:
+        return
+    latest_tokens_result = {
+        "pages": pages,
+        "timestamp": timestamp,
+        "last_page": 0
+    }
+    for chat_id, message_id in pinned_listings_messages.items():
+        page_idx = 0
+        page_text = f"{pages[page_idx]}\n\nОбновлено: {timestamp} (UTC+3) | ID: {page_idx + 1}"
+        buttons = [
+            InlineKeyboardButton("🔄 Обновить", callback_data="refresh"),
+            InlineKeyboardButton("➡️", callback_data="next")
+        ]
+        markup = InlineKeyboardMarkup([buttons])
+        try:
+            await context.bot.edit_message_text(chat_id=chat_id, message_id=message_id, text=page_text, parse_mode=ParseMode.HTML, disable_web_page_preview=True, reply_markup=markup)
+        except Exception as e:
+            logger.warning(f"Ошибка автообновления LISTINGS в чате {chat_id}: {e}")
 
 async def refresh_hots_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
     global latest_hots_result
@@ -210,7 +246,6 @@ async def refresh_hots_callback(update: Update, context: ContextTypes.DEFAULT_TY
         timestamp = latest_hots_result.get("timestamp")
         if not pages or not pages[0]:
             return
-
     message = f"{pages[0]}\n\nОбновлено: {timestamp} (UTC+3)"
     buttons = [InlineKeyboardButton("🔄 Обновить", callback_data="refresh_hots")]
     markup = InlineKeyboardMarkup([buttons])
@@ -224,10 +259,8 @@ async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     await query.answer()
     data = query.data
-
     if not latest_tokens_result["pages"]:
         return
-
     if data == "refresh":
         pages, timestamp = await fetch_tokens("pocketfi", 11000)
         if pages:
@@ -254,7 +287,6 @@ async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
         timestamp = latest_tokens_result["timestamp"]
     else:
         return
-
     page_text = f"{pages[page_idx]}\n\nОбновлено: {timestamp} (UTC+3) | ID: {page_idx + 1}"
     if len(latest_tokens_result["pages"]) > 1:
         nav_button = InlineKeyboardButton("⬅️" if page_idx else "➡️", callback_data="prev" if page_idx else "next")
@@ -264,7 +296,6 @@ async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
         ]
     else:
         buttons = [InlineKeyboardButton("🔄 Обновить", callback_data="refresh")]
-
     markup = InlineKeyboardMarkup([buttons])
     try:
         await query.edit_message_text(page_text, parse_mode=ParseMode.HTML, disable_web_page_preview=True, reply_markup=markup)
@@ -277,5 +308,7 @@ if __name__ == '__main__':
     app.add_handler(CommandHandler("hots", hots_command))
     app.add_handler(CallbackQueryHandler(button_callback, pattern="^(refresh|next|prev)$"))
     app.add_handler(CallbackQueryHandler(refresh_hots_callback, pattern="^refresh_hots$"))
+    app.job_queue.run_repeating(auto_update_hots, interval=300, first=10)
+    app.job_queue.run_repeating(auto_update_listings, interval=60, first=15)
     print("Бот запущен...")
     app.run_polling()
