@@ -67,25 +67,28 @@ async def fetch_tokens(sort_type: str, min_cap: float, limit: int = 40, paginate
                     ton_usd_price, _ = await get_ton_price()
                     filtered = []
                     for token in tokens:
+                    try:
+                        change = float(token.get("priceChange1H", 0))
+                        cap = float(token.get("marketCap", 0)) * ton_usd_price / 1e9
+                        holders_raw = token.get("holderAmount")
                         try:
-                            change = float(token.get("priceChange1H", 0))
-                            cap = float(token.get("marketCap", 0)) * ton_usd_price / 1e9
-                            holders_raw = token.get("holders")
-                            try:
-                                holders = int(holders_raw)
-                            except (TypeError, ValueError):
-                                holders = 0
-                            if sort_type == "hot":
-                                if abs(change) < 2:
-                                    continue
-                                if cap >= 1_000_000:
-                                    continue
-                                if holders < 15:
-                                    continue
-                            if cap >= min_cap:
-                                filtered.append((token, cap))
-                        except:
-                            continue
+                            holders = int(holders_raw)
+                        except (TypeError, ValueError):
+                            holders = 0
+                
+                        if sort_type == "hot":
+                            if abs(change) < 2:
+                                continue
+                            if cap >= 1_000_000:
+                                continue
+                            if holders < 12:
+                                continue
+
+        if cap >= min_cap:
+            filtered.append((token, cap))
+    except Exception as e:
+        logger.warning(f"Ошибка фильтрации токена: {e}")
+        continue
 
                     pages = []
                     if paginated:
