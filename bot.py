@@ -89,7 +89,7 @@ async def fetch_tokens(sort_type: str, min_cap: float, limit: int = 40, paginate
                         except:
                             continue
 
-                   pages = []
+                    pages = []
                     if paginated:
                         ranges = range(0, len(filtered), 10)
                     else:
