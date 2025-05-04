@@ -134,6 +134,18 @@ async def fetch_tokens(sort_type: str, min_cap: float, limit: int = 40, paginate
 
 async def listings_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     global latest_tokens_result, pinned_listings_messages
+    chat_id = update.effective_chat.id
+
+    # Удалить предыдущее сообщение, если есть
+    old_msg_id = pinned_listings_messages.get(chat_id)
+    if old_msg_id:
+        try:
+            await context.bot.unpin_chat_message(chat_id=chat_id, message_id=old_msg_id)
+            await context.bot.delete_message(chat_id=chat_id, message_id=old_msg_id)
+        except Exception as e:
+            logger.warning(f"Не удалось открепить/удалить старое сообщение LISTINGS: {e}")
+
+    # Получить новые данные
     pages, timestamp = await fetch_tokens("pocketfi", 11000)
     if pages:
         latest_tokens_result = {
@@ -155,14 +167,27 @@ async def listings_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     ]
     markup = InlineKeyboardMarkup([buttons])
     sent = await update.message.reply_text(page_text, parse_mode=ParseMode.HTML, disable_web_page_preview=True, reply_markup=markup)
+
     try:
         await context.bot.pin_chat_message(chat_id=sent.chat_id, message_id=sent.message_id)
         pinned_listings_messages[sent.chat_id] = sent.message_id
     except Exception as e:
-        logger.warning(f"Не удалось закрепить LISTINGS сообщение: {e}")
+        logger.warning(f"Не удалось закрепить сообщение LISTINGS: {e}")
 
 async def hots_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     global latest_hots_result, pinned_hots_messages
+    chat_id = update.effective_chat.id
+
+    # Удалить предыдущее сообщение, если есть
+    old_msg_id = pinned_hots_messages.get(chat_id)
+    if old_msg_id:
+        try:
+            await context.bot.unpin_chat_message(chat_id=chat_id, message_id=old_msg_id)
+            await context.bot.delete_message(chat_id=chat_id, message_id=old_msg_id)
+        except Exception as e:
+            logger.warning(f"Не удалось открепить/удалить старое сообщение HOTS: {e}")
+
+    # Получить новые данные
     pages, timestamp = await fetch_tokens("hot", 4000, limit=30, paginated=False)
     if pages and pages[0]:
         latest_hots_result = {
@@ -184,7 +209,7 @@ async def hots_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await context.bot.pin_chat_message(chat_id=sent.chat_id, message_id=sent.message_id)
         pinned_hots_messages[sent.chat_id] = sent.message_id
     except Exception as e:
-        logger.warning(f"Не удалось закрепить сообщение: {e}")
+        logger.warning(f"Не удалось закрепить сообщение HOTS: {e}")
 
 async def auto_update_hots(context: ContextTypes.DEFAULT_TYPE):
     global latest_hots_result, pinned_hots_messages
