@@ -128,7 +128,7 @@ async def fetch_tokens(sort_type: str, min_cap: float, limit: int = 40, paginate
                             except:
                                 growth_str = "🫥 0.00%"
 
-                            line = f"{name_symbol} • {mcap} • {idx}."    
+                            line = f"{idx}. {name_symbol} • {mcap} • {growth_str}"    
                             result.append(line)
                         pages.append("\n".join(result))
 
