@@ -115,11 +115,11 @@ async def fetch_tokens(sort_type: str, min_cap: float, limit: int = 40, paginate
                                 try:
                                     encoded_address = address_to_base64url(address)
                                     link = f"https://t.me/tontrade?start={REFERRAL_PREFIX}{encoded_address}"
-                                    name_symbol = f'<a href="{link}">{name} ({symbol})</a>'
+                                    name_symbol = f'<a href="{link}">{symbol}</a>'
                                 except:
-                                    name_symbol = f'{name} ({symbol})'
+                                    name_symbol = f'{symbol}'
                             else:
-                                name_symbol = f'{name} ({symbol})'
+                                name_symbol = f'{symbol}'
 
                             try:
                                 growth = float(change)
