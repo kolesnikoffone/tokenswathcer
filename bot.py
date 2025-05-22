@@ -197,7 +197,7 @@ async def hots_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
             logger.warning(f"Не удалось открепить/удалить старое сообщение HOTS: {e}")
 
     # Получить новые данные
-    pages, timestamp = await fetch_tokens("hot", 4000, limit=30, paginated=False)
+    pages, timestamp = await fetch_tokens("hot", 4000, limit=60, paginated=False)
     if pages and pages[0]:
         latest_hots_result = {
             "page": pages[0],
