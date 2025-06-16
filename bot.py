@@ -17,7 +17,7 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
-REFERRAL_PREFIX = "213213722"
+REFERRAL_PREFIX = "213213722_"
 latest_tokens_result = {"pages": [], "timestamp": "", "last_page": 0}
 latest_hots_result = {"page": "", "timestamp": ""}
 pinned_hots_messages = {}
