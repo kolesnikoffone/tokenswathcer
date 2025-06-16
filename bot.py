@@ -17,7 +17,7 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
-REFERRAL_PREFIX = "prghZZEt-"
+REFERRAL_PREFIX = "213213722"
 latest_tokens_result = {"pages": [], "timestamp": "", "last_page": 0}
 latest_hots_result = {"page": "", "timestamp": ""}
 pinned_hots_messages = {}
@@ -114,7 +114,7 @@ async def fetch_tokens(sort_type: str, min_cap: float, limit: int = 40, paginate
                             if address:
                                 try:
                                     encoded_address = address_to_base64url(address)
-                                    link = f"https://t.me/tontrade?start={REFERRAL_PREFIX}{encoded_address}"
+                                    link = f"https://t.me/dtrade?start={REFERRAL_PREFIX}{encoded_address}"
                                     name_symbol = f'<a href="{link}">{symbol}</a>'
                                 except:
                                     name_symbol = f'{symbol}'
