@@ -1,33 +1,45 @@
 import os
-import json
 import logging
 from datetime import datetime, timedelta
 import aiohttp
+import json
 from pytoniq_core import Address
 from telegram import InlineKeyboardButton, InlineKeyboardMarkup, Update
 from telegram.constants import ParseMode
 from telegram.ext import (
-    ApplicationBuilder, CommandHandler, CallbackQueryHandler,
-    ContextTypes, JobQueue
+    ApplicationBuilder,
+    CommandHandler,
+    CallbackQueryHandler,
+    ContextTypes,
+    JobQueue,
 )
+
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
 
 BOT_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN")
 REFERRAL_PREFIX = "213213722_"
-IGNORE_FILE = "ignore_list.json"
+IGNORE_FILE = "ignorelist.json"
 
-# Загрузка игнор-листа
-if os.path.exists(IGNORE_FILE):
+if not BOT_TOKEN:
+    raise ValueError("TELEGRAM_BOT_TOKEN not set")
+
+pinned_messages = {}
+latest_pages = {
+    "hots": {"page": "", "timestamp": ""},
+    "bighots": {"page": "", "timestamp": ""},
+}
+
+def load_ignore_list():
+    if not os.path.exists(IGNORE_FILE):
+        return set()
     with open(IGNORE_FILE, "r") as f:
-        ignored_addresses = set(json.load(f))
-else:
-    ignored_addresses = set()
+        return set(json.load(f))
 
-# Сохранение игнор-листа
-def save_ignore_list():
+def save_ignore_list(ignore_set):
     with open(IGNORE_FILE, "w") as f:
-        json.dump(list(ignored_addresses), f)
+        json.dump(list(ignore_set), f)
 
-# Формат адреса в base64url
 def address_to_base64url(address: str) -> str:
     return Address(address).to_str(
         is_user_friendly=True,
@@ -36,9 +48,9 @@ def address_to_base64url(address: str) -> str:
         is_url_safe=True
     )
 
-# Получение токенов из Blum
 async def fetch_tokens(min_cap: float, max_cap: float):
     url = "https://mempad-domain.blum.codes/api/v1/jetton/sections/hot?published=include&source=all"
+    ignore_set = load_ignore_list()
     try:
         async with aiohttp.ClientSession() as session:
             async with session.get(url) as response:
@@ -46,99 +58,130 @@ async def fetch_tokens(min_cap: float, max_cap: float):
                 tokens = data.get("jettons", [])
                 result = []
                 for token in tokens:
-                    address = token.get("address")
-                    if not address or address in ignored_addresses:
-                        continue
-                    cap = float(token.get("marketCap", 0))
-                    change = float(token.get("price24hChange", 0))
-                    if cap < min_cap or cap > max_cap or abs(change) < 2:
-                        continue
-
                     try:
-                        encoded_address = address_to_base64url(address)
-                        ref_link = f"https://t.me/dtrade?start={REFERRAL_PREFIX}{encoded_address}"
+                        address = token.get("address")
+                        if not address or address in ignore_set:
+                            continue
+
+                        cap = float(token.get("marketCap", 0))
+                        if not (min_cap <= cap <= max_cap):
+                            continue
+
+                        change = float(token.get("price24hChange", 0))
+                        if abs(change) < 2:
+                            continue
+
+                        symbol = token.get("symbol", "")
+                        encoded = address_to_base64url(address)
+                        link = f"https://t.me/dtrade?start={REFERRAL_PREFIX}{encoded}"
+
+                        emoji = "💎" if change >= 100 else "🤑" if change >= 50 else "🚀" if change >= 25 else "💸" if change >= 10 else "📈" if change >= 5 else "🥹" if change > 0 else "🫥" if change > -1 else "📉" if change > -5 else "💔" if change > -10 else "😭" if change > -25 else "🤡"
+                        growth = f"{emoji} {change:+.2f}%"
+                        cap_str = f"${cap/1e6:.1f}M" if cap >= 1_000_000 else f"${cap/1e3:.1f}K"
+
+                        result.append(f"├{growth} • <a href=\"{link}\">{symbol}</a> • {cap_str}")
                     except:
-                        ref_link = ""
+                        continue
 
-                    if cap >= 1_000_000:
-                        cap_str = f"${cap/1e6:.1f}M"
-                    else:
-                        cap_str = f"${cap/1e3:.1f}K"
-
-                    emoji = (
-                        "💎" if change > 100 else "🤑" if change > 50 else
-                        "🚀" if change > 25 else "💸" if change > 10 else
-                        "📈" if change > 5 else "🥹"
-                    )
-                    line = f"├{emoji} +{change:.2f}% • <a href=\"{ref_link}\">{token.get('symbol')}</a> • {cap_str}"
-                    result.append(line)
-                return result
+                page = "\n".join(result)
+                timestamp = (datetime.utcnow() + timedelta(hours=3)).strftime("%d.%m.%Y %H:%M:%S")
+                return page, timestamp
     except Exception as e:
-        logging.error(f"Ошибка при получении токенов: {e}")
-        return []
+        logger.error(f"Fetch error: {e}")
+        return "", ""
 
-# Хендлеры
-async def send_tokens(update: Update, context: ContextTypes.DEFAULT_TYPE, min_cap: float, max_cap: float):
+async def show_tokens(update: Update, context: ContextTypes.DEFAULT_TYPE, cmd: str, min_cap: float, max_cap: float):
     chat_id = update.effective_chat.id
-    tokens = await fetch_tokens(min_cap, max_cap)
-    if not tokens:
+    old_msg_id = pinned_messages.get((chat_id, cmd))
+    if old_msg_id:
+        try:
+            await context.bot.unpin_chat_message(chat_id, old_msg_id)
+            await context.bot.delete_message(chat_id, old_msg_id)
+        except:
+            pass
+
+    page, timestamp = await fetch_tokens(min_cap, max_cap)
+    if not page:
         return
-    timestamp = (datetime.utcnow() + timedelta(hours=3)).strftime("%d.%m.%Y %H:%M:%S")
-    text = "\n".join(tokens) + f"\n\nОбновлено: {timestamp} (UTC+3)"
-    markup = InlineKeyboardMarkup([[InlineKeyboardButton("🔄 Обновить", callback_data=f"refresh_{min_cap}_{max_cap}")]])
-    msg = await update.message.reply_text(text, parse_mode=ParseMode.HTML, disable_web_page_preview=True, reply_markup=markup)
-    context.chat_data[f"msg_{min_cap}_{max_cap}"] = msg.message_id
-
-async def hots_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    await send_tokens(update, context, 4_000, 250_000)
-
-async def bighots_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    await send_tokens(update, context, 250_000, 10_000_000)
+    latest_pages[cmd] = {"page": page, "timestamp": timestamp}
+    text = f"{page}\n\nОбновлено: {timestamp} (UTC+3)"
+    markup = InlineKeyboardMarkup([[InlineKeyboardButton("🔄 Обновить", callback_data=f"refresh_{cmd}")]])
+    sent = await update.message.reply_text(text, parse_mode=ParseMode.HTML, reply_markup=markup)
+    await context.bot.pin_chat_message(chat_id, sent.message_id)
+    pinned_messages[(chat_id, cmd)] = sent.message_id
 
 async def refresh_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
+    cmd = query.data.replace("refresh_", "")
     await query.answer()
-    _, min_cap, max_cap = query.data.split("_")
-    tokens = await fetch_tokens(float(min_cap), float(max_cap))
-    if not tokens:
-        return
-    timestamp = (datetime.utcnow() + timedelta(hours=3)).strftime("%d.%m.%Y %H:%M:%S")
-    text = "\n".join(tokens) + f"\n\nОбновлено: {timestamp} (UTC+3)"
-    markup = InlineKeyboardMarkup([[InlineKeyboardButton("🔄 Обновить", callback_data=query.data)]])
-    await query.edit_message_text(text=text, parse_mode=ParseMode.HTML, disable_web_page_preview=True, reply_markup=markup)
 
-# Игнор-команды
-async def ignore_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    cap_ranges = {
+        "hots": (4000, 250_000),
+        "bighots": (250_000, 10_000_000)
+    }
+    min_cap, max_cap = cap_ranges.get(cmd, (0, 10_000_000))
+    page, timestamp = await fetch_tokens(min_cap, max_cap)
+    if not page:
+        return
+    latest_pages[cmd] = {"page": page, "timestamp": timestamp}
+    text = f"{page}\n\nОбновлено: {timestamp} (UTC+3)"
+    markup = InlineKeyboardMarkup([[InlineKeyboardButton("🔄 Обновить", callback_data=f"refresh_{cmd}")]])
+    await query.edit_message_text(text, parse_mode=ParseMode.HTML, reply_markup=markup)
+
+# Команды
+async def hots(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    await show_tokens(update, context, "hots", 4000, 250_000)
+
+async def bighots(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    await show_tokens(update, context, "bighots", 250_000, 10_000_000)
+
+async def ignore(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not context.args:
-        await update.message.reply_text("Укажи адрес токена, который нужно игнорировать")
-        return
-    address = context.args[0]
-    ignored_addresses.add(address)
-    save_ignore_list()
-    await update.message.reply_text(f"Добавлен в игнор: {address}")
+        return await update.message.reply_text("Формат: /ignore <contract_address>")
+    ignore_set = load_ignore_list()
+    ignore_set.add(context.args[0])
+    save_ignore_list(ignore_set)
+    await update.message.reply_text("Добавлено в игнор")
 
-async def deignore_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+async def deignore(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not context.args:
-        await update.message.reply_text("Укажи адрес токена, который нужно удалить из игнора")
-        return
-    address = context.args[0]
-    ignored_addresses.discard(address)
-    save_ignore_list()
-    await update.message.reply_text(f"Удалён из игнора: {address}")
+        return await update.message.reply_text("Формат: /deignore <contract_address>")
+    ignore_set = load_ignore_list()
+    ignore_set.discard(context.args[0])
+    save_ignore_list(ignore_set)
+    await update.message.reply_text("Удалено из игнора")
 
-async def ignorelist_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    if not ignored_addresses:
-        await update.message.reply_text("Игнор-лист пуст")
-        return
-    msg = "Игнор-лист:\n" + "\n".join(ignored_addresses)
-    await update.message.reply_text(msg)
+async def ignorelist(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    ignore_set = load_ignore_list()
+    if not ignore_set:
+        return await update.message.reply_text("Игнор-лист пуст")
+    await update.message.reply_text("\n".join(ignore_set))
 
-if __name__ == '__main__':
+# Автообновление
+async def auto_refresh(context: ContextTypes.DEFAULT_TYPE):
+    for cmd, (min_cap, max_cap) in {"hots": (4000, 250_000), "bighots": (250_000, 10_000_000)}.items():
+        page, timestamp = await fetch_tokens(min_cap, max_cap)
+        if not page:
+            continue
+        latest_pages[cmd] = {"page": page, "timestamp": timestamp}
+        text = f"{page}\n\nОбновлено: {timestamp} (UTC+3)"
+        markup = InlineKeyboardMarkup([[InlineKeyboardButton("🔄 Обновить", callback_data=f"refresh_{cmd}")]])
+        for (chat_id, label), msg_id in pinned_messages.items():
+            if label != cmd:
+                continue
+            try:
+                await context.bot.edit_message_text(chat_id=chat_id, message_id=msg_id, text=text, parse_mode=ParseMode.HTML, reply_markup=markup)
+            except Exception as e:
+                logger.warning(f"Auto-update error for {chat_id}: {e}")
+
+if __name__ == "__main__":
     app = ApplicationBuilder().token(BOT_TOKEN).build()
-    app.add_handler(CommandHandler("hots", hots_command))
-    app.add_handler(CommandHandler("bighots", bighots_command))
-    app.add_handler(CommandHandler("ignore", ignore_command))
-    app.add_handler(CommandHandler("deignore", deignore_command))
-    app.add_handler(CommandHandler("ignorelist", ignorelist_command))
-    app.add_handler(CallbackQueryHandler(refresh_callback, pattern=r"^refresh_\\d+_\\d+$"))
+    app.add_handler(CommandHandler("hots", hots))
+    app.add_handler(CommandHandler("bighots", bighots))
+    app.add_handler(CommandHandler("ignore", ignore))
+    app.add_handler(CommandHandler("deignore", deignore))
+    app.add_handler(CommandHandler("ignorelist", ignorelist))
+    app.add_handler(CallbackQueryHandler(refresh_callback, pattern=r"refresh_.*"))
+    app.job_queue.run_repeating(auto_refresh, interval=10, first=10)
+    print("Bot started...")
     app.run_polling()
