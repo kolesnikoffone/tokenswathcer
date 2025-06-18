@@ -1,98 +1,72 @@
-import logging
 import aiohttp
-import os
 from datetime import datetime, timedelta
-from telegram import InlineKeyboardButton, InlineKeyboardMarkup, Update
-from telegram.constants import ParseMode
-from telegram.ext import ApplicationBuilder, CommandHandler, CallbackQueryHandler, ContextTypes
 
-BOT_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN")
-if not BOT_TOKEN:
-    raise ValueError("Переменная окружения TELEGRAM_BOT_TOKEN не установлена")
-
-logging.basicConfig(format='%(asctime)s - %(name)s - %(levelname)s - %(message)s', level=logging.INFO)
-logger = logging.getLogger(__name__)
-
-latest_dyor_result = {"hots": "", "listings": "", "timestamp": ""}
-
-async def fetch_dyor_data(sort_type: str, limit: int = 10):
+# Получить список всех токенов
+async def fetch_all_jettons():
     url = "https://api.dyor.io/v1/jettons"
-    headers = {
-        "accept": "application/json",
-        "content-type": "application/json"
-    }
-    payload = {
-        "chain": "mainnet",
-        "sortBy": "priceChange.day.changePercent" if sort_type == "hot" else "createdAt",
-        "sortDirection": "desc",
-        "limit": limit,
-        "excludeScam": True
-    }
-    try:
-        async with aiohttp.ClientSession() as session:
-            async with session.post(url, headers=headers, json=payload) as response:
-                logger.info(f"DYOR API responded with status {response.status}")
-                if response.status == 200:
-                    data = await response.json()
-                    tokens = data.get("items", [])
-                    results = []
-                    for idx, token in enumerate(tokens, 1):
-                        name = token.get("name", "N/A")
-                        symbol = token.get("symbol", "N/A")
-                        address = token.get("address", "")
-                        price_change = token.get("priceChange", {}).get("day", {}).get("changePercent", 0)
-                        mcap = token.get("marketCap", {}).get("usd", 0)
+    async with aiohttp.ClientSession() as session:
+        async with session.get(url) as resp:
+            data = await resp.json()
+            return data.get("jettons", [])
 
-                        growth_str = f"{price_change:+.2f}%"
-                        emoji = "🚀" if price_change > 25 else "📈" if price_change > 5 else "🫥" if price_change > 0 else "📉"
+# Получить информацию о токене по адресу
+async def fetch_jetton_info(address):
+    url = f"https://api.dyor.io/v1/jetton/{address}/info"
+    async with aiohttp.ClientSession() as session:
+        async with session.get(url) as resp:
+            if resp.status == 200:
+                return await resp.json()
+            return {}
 
-                        if mcap >= 1_000_000:
-                            mcap_str = f"<b>${mcap/1_000_000:.1f}M</b>"
-                        elif mcap >= 1_000:
-                            mcap_str = f"<b>${mcap/1_000:.1f}K</b>"
-                        else:
-                            mcap_str = f"<b>${mcap:.2f}</b>"
+# Получить топ токенов по росту цены
+async def get_top_jettons(limit=10):
+    jettons = await fetch_all_jettons()
+    results = []
+    for token in jettons:
+        address = token.get("address")
+        info = await fetch_jetton_info(address)
+        try:
+            change = float(info.get("priceChange24h", 0))
+            liquidity = float(info.get("liquidity", 0))
+            price = float(info.get("price", 0))
+            symbol = token.get("symbol")
+            name = token.get("name")
+            results.append({
+                "symbol": symbol,
+                "name": name,
+                "change": change,
+                "liquidity": liquidity,
+                "price": price
+            })
+        except:
+            continue
+    sorted_data = sorted(results, key=lambda x: -x["change"])
+    return sorted_data[:limit]
 
-                        link = f"https://dyor.io/token/{address}"
-                        line = f"{idx}. {emoji} {growth_str} • {mcap_str} • <a href='{link}'>{name} ({symbol})</a>"
-                        results.append(line)
-                    timestamp = datetime.utcnow() + timedelta(hours=3)
-                    return "\n".join(results), timestamp.strftime("%d.%m.%Y %H:%M:%S")
-                else:
-                    return "", ""
-    except Exception as e:
-        logger.warning(f"Ошибка запроса к DYOR API: {e}")
-        return "", ""
+# Форматирование текста
+async def format_top_tokens():
+    tokens = await get_top_jettons()
+    lines = []
+    for i, token in enumerate(tokens, 1):
+        emoji = "🔥" if token['change'] > 10 else "📈" if token['change'] > 0 else "📉"
+        line = f"{i}. {emoji} <b>{token['symbol']}</b> ({token['name']})\nИзм: {token['change']:+.2f}% | Ликвид: ${token['liquidity']:.0f}"
+        lines.append(line)
+    timestamp = (datetime.utcnow() + timedelta(hours=3)).strftime("%d.%m.%Y %H:%M:%S")
+    return f"<b>\ud83d\udd25 Топ за 24ч:</b>\n\n" + "\n".join(lines) + f"\n\nОбновлено: {timestamp} (UTC+3)"
 
-async def hots_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    global latest_dyor_result
-    text, timestamp = await fetch_dyor_data("hot")
-    if not text:
-        text = latest_dyor_result.get("hots")
-        timestamp = latest_dyor_result.get("timestamp")
-    else:
-        latest_dyor_result["hots"] = text
-        latest_dyor_result["timestamp"] = timestamp
+# Команда /hots
+async def hots_command(update, context):
+    text = await format_top_tokens()
+    await update.message.reply_text(text, parse_mode="HTML", disable_web_page_preview=True)
 
-    message = f"<b>🔥 Топ за 24ч:</b>\n{text}\n\nОбновлено: {timestamp} (UTC+3)"
-    await update.message.reply_text(message, parse_mode=ParseMode.HTML, disable_web_page_preview=True)
-
-async def listings_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    global latest_dyor_result
-    text, timestamp = await fetch_dyor_data("listings")
-    if not text:
-        text = latest_dyor_result.get("listings")
-        timestamp = latest_dyor_result.get("timestamp")
-    else:
-        latest_dyor_result["listings"] = text
-        latest_dyor_result["timestamp"] = timestamp
-
-    message = f"<b>🆕 Новые листинги:</b>\n{text}\n\nОбновлено: {timestamp} (UTC+3)"
-    await update.message.reply_text(message, parse_mode=ParseMode.HTML, disable_web_page_preview=True)
-
-if __name__ == '__main__':
-    app = ApplicationBuilder().token(BOT_TOKEN).build()
-    app.add_handler(CommandHandler("hots", hots_command))
-    app.add_handler(CommandHandler("listings", listings_command))
-    print("DYOR бот запущен...")
-    app.run_polling()
+# Команда /listings — просто свежие токены
+async def listings_command(update, context):
+    jettons = await fetch_all_jettons()
+    timestamp = (datetime.utcnow() + timedelta(hours=3)).strftime("%d.%m.%Y %H:%M:%S")
+    lines = []
+    for j in jettons[:10]:
+        name = j.get("name", "")
+        symbol = j.get("symbol", "")
+        lines.append(f"<b>{symbol}</b> ({name})")
+    text = f"<b>\U0001f195 Новые листинги:</b>\n\n" + "\n".join(lines) + f"\n\nОбновлено: {timestamp} (UTC+3)"
+    await update.message.reply_text(text, parse_mode="HTML", disable_web_page_preview=True)
