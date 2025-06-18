@@ -1,61 +1,56 @@
+import asyncio
 import logging
-import requests
+import os
+import httpx
 from aiogram import Bot, Dispatcher, types
 from aiogram.types import Message
-from aiogram.utils import executor
+from aiogram.filters import Command
+
+BOT_TOKEN = os.getenv("BOT_TOKEN")  # Укажи переменную окружения или вставь напрямую
 
 API_URL = "https://mempad-domain.blum.codes/api/v1/jetton/sections/hot?published=include&source=all"
-BLUM_BEARER_TOKEN = "your_token_here"  # Замените на ваш актуальный токен
+HEADERS = {
+    "accept": "application/json",
+    "authorization": f"Bearer {os.getenv('BLUM_BEARER_TOKEN')}",
+    "lang": "ru",
+}
 
-logging.basicConfig(level=logging.INFO)
-bot = Bot(token="your_telegram_bot_token")
-dp = Dispatcher(bot)
+dp = Dispatcher()
 
-def format_number(n):
-    try:
-        n = float(n)
-        if n >= 1e9:
-            return f"{n / 1e9:.1f}B"
-        elif n >= 1e6:
-            return f"{n / 1e6:.1f}M"
-        elif n >= 1e3:
-            return f"{n / 1e3:.1f}K"
-        else:
-            return f"{n:.2f}"
-    except Exception:
-        return str(n)
+@dp.message(Command("hots"))
+async def get_hot_list(message: Message):
+    async with httpx.AsyncClient() as client:
+        try:
+            r = await client.get(API_URL, headers=HEADERS)
+            r.raise_for_status()
+            data = r.json()
 
-@dp.message_handler(commands=["hots"])
-async def send_hots(message: Message):
-    headers = {
-        "Authorization": f"Bearer {BLUM_BEARER_TOKEN}",
-        "accept": "application/json"
-    }
-    try:
-        response = requests.get(API_URL, headers=headers)
-        response.raise_for_status()
-        data = response.json()
-        jettons = data.get("jettons", [])
+            sorted_jettons = sorted(
+                data.get("jettons", []),
+                key=lambda j: float(j["stats"].get("marketCap", 0)),
+                reverse=True
+            )[:10]
 
-        # Сортировка по капитализации (по убыванию)
-        sorted_jettons = sorted(jettons, key=lambda j: float(j["stats"].get("marketCap", 0)), reverse=True)
+            result_lines = []
+            for i, jetton in enumerate(sorted_jettons, start=1):
+                ticker = jetton.get("ticker", "?")
+                market_cap = float(jetton["stats"].get("marketCap", 0))
+                market_cap_str = f"${market_cap/1e6:.1f}M" if market_cap > 1e6 else f"${market_cap:,.0f}"
+                result_lines.append(f"{i}. {ticker} | {market_cap_str}")
 
-        # Формируем текст
-        lines = []
-        for i, token in enumerate(sorted_jettons[:10], 1):
-            ticker = token.get("ticker", "?")
-            market_cap = token.get("stats", {}).get("marketCap", 0)
-            formatted_cap = format_number(market_cap)
-            lines.append(f"{i}. {ticker} | ${formatted_cap}")
+            result_text = "\n".join(result_lines)
+            result_text += f"\n\nОбновлено: {message.date.strftime('%d.%m.%Y %H:%M:%S')} (UTC+3)"
+            await message.answer(result_text)
 
-        reply = "🔥 <b>Hot Jettons</b> 🔥\n\n" + "\n".join(lines)
-        reply += f"\n\nОбновлено: <i>{message.date.strftime('%d.%m.%Y %H:%M:%S')}</i>"
+        except Exception as e:
+            logging.exception("Ошибка при получении hot list")
+            await message.answer("⚠️ Ошибка при получении данных")
 
-        await message.answer(reply, parse_mode="HTML")
 
-    except Exception as e:
-        logging.error(f"Failed to fetch hot jettons: {e}")
-        await message.answer("Ошибка при получении списка hot токенов.")
+async def main():
+    bot = Bot(token=BOT_TOKEN)
+    await dp.start_polling(bot)
 
 if __name__ == "__main__":
-    executor.start_polling(dp, skip_updates=True)
+    logging.basicConfig(level=logging.INFO)
+    asyncio.run(main())
