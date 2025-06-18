@@ -1,56 +1,118 @@
-import asyncio
 import logging
 import os
-from aiogram import Bot, Dispatcher, types
-from aiogram.types import Message
-from aiogram.enums import ParseMode
-from aiogram.filters import CommandStart
-from aiogram.utils.markdown import hbold
-import httpx
-from dotenv import load_dotenv
+import aiohttp
+from telegram import InlineKeyboardButton, InlineKeyboardMarkup, Update
+from telegram.constants import ParseMode
+from telegram.ext import ApplicationBuilder, CommandHandler, CallbackQueryHandler, ContextTypes, JobQueue
+from datetime import datetime, timedelta
 
-load_dotenv()
+BOT_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN")
+if not BOT_TOKEN:
+    raise ValueError("Переменная окружения TELEGRAM_BOT_TOKEN не установлена")
 
-TELEGRAM_BOT_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN")
+logging.basicConfig(
+    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
+    level=logging.INFO
+)
+logger = logging.getLogger(__name__)
 
-# Configure logging
-logging.basicConfig(level=logging.INFO)
+latest_hots_result = {"page": "", "timestamp": ""}
+pinned_hots_messages = {}
 
-# Initialize bot and dispatcher
-bot = Bot(token=TELEGRAM_BOT_TOKEN, parse_mode=ParseMode.HTML)
-dp = Dispatcher()
-
-async def fetch_hot_jettons():
+async def fetch_tokens():
     url = "https://mempad-domain.blum.codes/api/v1/jetton/sections/hot?published=include&source=all"
-    async with httpx.AsyncClient() as client:
-        response = await client.get(url)
-        response.raise_for_status()
-        return response.json()["jettons"]
-
-@dp.message(CommandStart())
-async def command_start_handler(message: Message) -> None:
-    await message.answer(f"Привет, {hbold(message.from_user.full_name)}!\nОтправь команду /hot, чтобы увидеть горячие токены.")
-
-@dp.message(commands=["hot"])
-async def send_hot_jettons(message: Message):
     try:
-        jettons = await fetch_hot_jettons()
-        top = jettons[:10]
-        msg = "🔥 Топ 10 HOT токенов:\n\n"
-        for i, j in enumerate(top, 1):
-            name = j.get("name", "")
-            ticker = j.get("ticker", "")
-            price = j.get("stats", {}).get("lastPrice", "0")
-            volume = j.get("stats", {}).get("volume24h", "0")
-            change = j.get("stats", {}).get("price24hChange", "0")
-            msg += f"{i}. {hbold(name)} ({ticker})\n💰 Price: {price}\n📊 Volume 24h: {volume}\n📈 Change: {change}%\n\n"
-        await message.answer(msg)
+        async with aiohttp.ClientSession() as session:
+            async with session.get(url) as response:
+                if response.status == 200:
+                    data = await response.json()
+                    tokens = data.get("items", [])
+
+                    lines = []
+                    for token in tokens[:15]:  # Ограничим до 15 верхних
+                        symbol = token.get("symbol", "?")
+                        market_cap = float(token.get("marketCap", 0))
+
+                        if market_cap >= 1_000_000:
+                            mcap = f"<b>${market_cap / 1_000_000:.1f}M</b>"
+                        elif market_cap >= 1_000:
+                            mcap = f"<b>${market_cap / 1_000:.1f}K</b>"
+                        else:
+                            mcap = f"<b>${market_cap:.2f}</b>"
+
+                        line = f"├ {symbol} • {mcap}"
+                        lines.append(line)
+
+                    timestamp = datetime.utcnow() + timedelta(hours=3)
+                    formatted_time = timestamp.strftime("%d.%m.%Y %H:%M:%S")
+                    return ["\n".join(lines)], formatted_time
     except Exception as e:
-        logging.error(f"Ошибка при получении данных: {e}")
-        await message.answer("Произошла ошибка при получении данных. Попробуйте позже.")
+        logger.warning(f"Ошибка при получении токенов из Bloom: {e}")
+    return [], ""
 
-async def main() -> None:
-    await dp.start_polling(bot)
+async def hots_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    global latest_hots_result, pinned_hots_messages
+    chat_id = update.effective_chat.id
 
-if __name__ == "__main__":
-    asyncio.run(main())
+    old_msg_id = pinned_hots_messages.get(chat_id)
+    if old_msg_id:
+        try:
+            await context.bot.unpin_chat_message(chat_id=chat_id, message_id=old_msg_id)
+            await context.bot.delete_message(chat_id=chat_id, message_id=old_msg_id)
+        except:
+            pass
+
+    pages, timestamp = await fetch_tokens()
+    if pages and pages[0]:
+        latest_hots_result = {
+            "page": pages[0],
+            "timestamp": timestamp
+        }
+    else:
+        pages = [latest_hots_result.get("page")]
+        timestamp = latest_hots_result.get("timestamp")
+        if not pages or not pages[0]:
+            return
+
+    message = f"{pages[0]}\n\nОбновлено: {timestamp} (UTC+3)"
+    buttons = [InlineKeyboardButton("🔄 Обновить", callback_data="refresh_hots")]
+    markup = InlineKeyboardMarkup([buttons])
+    sent = await update.message.reply_text(message, parse_mode=ParseMode.HTML, disable_web_page_preview=True, reply_markup=markup)
+
+    try:
+        await context.bot.pin_chat_message(chat_id=sent.chat_id, message_id=sent.message_id)
+        pinned_hots_messages[sent.chat_id] = sent.message_id
+    except:
+        pass
+
+async def refresh_hots_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    global latest_hots_result
+    query = update.callback_query
+    await query.answer()
+    pages, timestamp = await fetch_tokens()
+    if pages and pages[0]:
+        latest_hots_result = {
+            "page": pages[0],
+            "timestamp": timestamp
+        }
+    else:
+        pages = [latest_hots_result.get("page")]
+        timestamp = latest_hots_result.get("timestamp")
+        if not pages or not pages[0]:
+            return
+
+    message = f"{pages[0]}\n\nОбновлено: {timestamp} (UTC+3)"
+    buttons = [InlineKeyboardButton("🔄 Обновить", callback_data="refresh_hots")]
+    markup = InlineKeyboardMarkup([buttons])
+    try:
+        await query.edit_message_text(text=message, parse_mode=ParseMode.HTML, disable_web_page_preview=True, reply_markup=markup)
+    except:
+        pass
+
+if __name__ == '__main__':
+    app = ApplicationBuilder().token(BOT_TOKEN).build()
+    app.add_handler(CommandHandler("hots", hots_command))
+    app.add_handler(CallbackQueryHandler(refresh_hots_callback, pattern="^refresh_hots$"))
+    app.job_queue.run_repeating(refresh_hots_callback, interval=120, first=10)
+    print("Бот запущен...")
+    app.run_polling()
