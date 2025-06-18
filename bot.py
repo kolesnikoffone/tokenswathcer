@@ -45,7 +45,7 @@ async def get_ton_price():
         logger.warning(f"Не удалось получить цену TON: {e}")
     return None, 0
 
-async def fetch_tokens(sort_type: str, min_cap: float, limit: int = 100, paginated: bool = True):
+async def fetch_tokens(sort_type: str, min_cap: float, limit: int = 90, paginated: bool = True):
     if sort_type == "hot":
         limit = 90
     url = f'https://prod-api.bigpump.app/api/v1/coins?sortType={sort_type}&limit={limit}'
@@ -70,18 +70,11 @@ async def fetch_tokens(sort_type: str, min_cap: float, limit: int = 100, paginat
                         try:
                             change = float(token.get("priceChange24H", 0))
                             cap = float(token.get("marketCap", 0)) * ton_usd_price / 1e9
-                            holders_raw = token.get("holderAmount")
-                            try:
-                                holders = int(holders_raw)
-                            except (TypeError, ValueError):
-                                holders = 0
-
                             if sort_type == "hot":
                                 if abs(change) < 1:
                                     continue
                                 if cap >= 1_000_000:
                                     continue
-
                             if cap >= min_cap:
                                 filtered.append((token, cap))
                         except:
