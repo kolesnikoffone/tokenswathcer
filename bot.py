@@ -47,7 +47,7 @@ async def get_ton_price():
 
 async def fetch_tokens(sort_type: str, min_cap: float, limit: int = 40, paginated: bool = True):
     if sort_type == "hot":
-        limit = 60
+        limit = 90
     url = f'https://prod-api.bigpump.app/api/v1/coins?sortType={sort_type}&limit={limit}'
     headers = {
         'accept': '*/*',
@@ -68,7 +68,7 @@ async def fetch_tokens(sort_type: str, min_cap: float, limit: int = 40, paginate
                     filtered = []
                     for token in tokens:
                         try:
-                            change = float(token.get("priceChange1H", 0))
+                            change = float(token.get("priceChange24H", 0))
                             cap = float(token.get("marketCap", 0)) * ton_usd_price / 1e9
                             holders_raw = token.get("holderAmount")
                             try:
@@ -225,7 +225,7 @@ async def auto_update_hots(context: ContextTypes.DEFAULT_TYPE):
     chats_to_remove = []
     for chat_id, message_id in pinned_hots_messages.items():
         try:
-            pages, timestamp = await fetch_tokens("hot", 4000, limit=30, paginated=False)
+            pages, timestamp = await fetch_tokens("hot", 4000, limit=90, paginated=False)
             if not pages or not pages[0]:
                 continue
             latest_hots_result = {
@@ -269,7 +269,7 @@ async def refresh_hots_callback(update: Update, context: ContextTypes.DEFAULT_TY
     global latest_hots_result
     query = update.callback_query
     await query.answer()
-    pages, timestamp = await fetch_tokens("hot", 4000, limit=30, paginated=False)
+    pages, timestamp = await fetch_tokens("hot", 4000, limit=90, paginated=False)
     if pages and pages[0]:
         latest_hots_result = {
             "page": pages[0],
