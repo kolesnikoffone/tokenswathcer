@@ -1,27 +1,33 @@
-import logging
 import os
+import logging
 import aiohttp
-from pytoniq_core import Address
+from datetime import datetime, timedelta
 from telegram import InlineKeyboardButton, InlineKeyboardMarkup, Update
 from telegram.constants import ParseMode
-from telegram.ext import ApplicationBuilder, CommandHandler, CallbackQueryHandler, ContextTypes, JobQueue
-from datetime import datetime, timedelta
+from telegram.ext import (
+    ApplicationBuilder,
+    CommandHandler,
+    CallbackQueryHandler,
+    ContextTypes,
+)
+from pytoniq_core import Address
 
 BOT_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN")
 if not BOT_TOKEN:
-    raise ValueError("Переменная окружения TELEGRAM_BOT_TOKEN не установлена")
+    raise EnvironmentError("TELEGRAM_BOT_TOKEN не установлен")
 
-logging.basicConfig(
-    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
-    level=logging.INFO
-)
+logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 REFERRAL_PREFIX = "213213722_"
-latest_hots_result = {"page": "", "timestamp": ""}
-latest_bighots_result = {"page": "", "timestamp": ""}
-pinned_hots_messages = {}
-pinned_bighots_messages = {}
+
+latest_results = {
+    "hots": {"page": "", "timestamp": ""},
+    "bighots": {"page": "", "timestamp": ""},
+}
+pinned_messages = {}
+ignored_addresses = {}
+
 
 def address_to_base64url(address: str) -> str:
     return Address(address).to_str(
@@ -31,125 +37,124 @@ def address_to_base64url(address: str) -> str:
         is_url_safe=True
     )
 
+
 async def fetch_tokens(min_cap: float, max_cap: float):
-    url = 'https://mempad-domain.blum.codes/api/v1/jetton/sections/hot?published=include&source=all'
+    url = "https://mempad-domain.blum.codes/api/v1/jetton/sections/hot?published=include&source=all"
     try:
         async with aiohttp.ClientSession() as session:
             async with session.get(url) as response:
                 data = await response.json()
                 tokens = data.get("jettons", [])
-                filtered = []
-                for token in tokens:
+                result = []
+                for idx, token in enumerate(tokens):
+                    cap = float(token.get("marketCap", 0))
+                    change = float(token.get("price24hChange", 0))
+                    if cap < min_cap or cap > max_cap:
+                        continue
+                    if abs(change) < 2:
+                        continue
+
+                    name = token.get("name", "N/A")
+                    symbol = token.get("symbol", "")
+                    address = token.get("address")
+                    if not address:
+                        continue
+
                     try:
-                        change = float(token.get("stats", {}).get("price24hChange", 0))
-                        cap = float(token.get("stats", {}).get("marketCap", 0))
-                        if abs(change) < 2:
-                            continue
-                        if min_cap <= cap <= max_cap:
-                            filtered.append((token, cap))
+                        encoded = address_to_base64url(address)
+                        ref = f"https://t.me/dtrade?start={REFERRAL_PREFIX}{encoded}"
                     except:
                         continue
-                result = []
-                for idx, (token, cap) in enumerate(filtered[:10], 1):
-                    name = token.get("name", "N/A")
-                    symbol = token.get("ticker", "")
-                    change = float(token.get("stats", {}).get("price24hChange", 0))
-                    address = token.get("address")
 
-                    mcap = f"${cap/1e6:.1f}M" if cap >= 1_000_000 else f"${cap/1e3:.1f}K"
+                    emoji = (
+                        "💎" if change > 100 else
+                        "🚀" if change > 50 else
+                        "💸" if change > 10 else
+                        "📈" if change > 5 else
+                        "🥹" if change > 0 else
+                        "📉"
+                    )
+                    cap_str = f"${cap/1e6:.1f}M" if cap > 1_000_000 else f"${cap/1e3:.1f}K"
+                    line = f"├{emoji} +{change:.2f}% • {symbol} ({ref}) • {cap_str}"
+                    result.append((cap, line))
 
-                    try:
-                        encoded_address = address_to_base64url(address)
-                        link = f"https://t.me/dtrade?start={REFERRAL_PREFIX}{encoded_address}"
-                        name_symbol = f'<a href="{link}">{symbol}</a>'
-                    except:
-                        name_symbol = f'{symbol}'
-
-                    emoji = "💎" if change >= 100 else "🤑" if change >= 50 else "🚀" if change >= 25 else "💸" if change >= 10 else "📈" if change >= 5 else "🥹" if change > 0 else "🫥" if change > -1 else "📉" if change > -5 else "💔" if change > -10 else "😭" if change > -25 else "🤡"
-                    growth_str = f"{emoji} {change:+.2f}%"
-                    line = f"├{growth_str} • {name_symbol} • {mcap}"
-                    result.append(line)
-
+                result.sort(key=lambda x: -x[0])
+                lines = [line for _, line in result[:10]]
+                page = "\n".join(lines)
                 timestamp = (datetime.utcnow() + timedelta(hours=3)).strftime("%d.%m.%Y %H:%M:%S")
-                return "\n".join(result), timestamp
+                return page, timestamp
     except Exception as e:
-        logger.error(f"Ошибка получения токенов: {e}")
+        logger.error(f"Ошибка при получении токенов: {e}")
         return "", ""
 
-async def send_hots(update: Update, context: ContextTypes.DEFAULT_TYPE, min_cap: float, max_cap: float, store: dict, pinned_store: dict, tag: str):
+
+async def send_hot_tokens(update: Update, context: ContextTypes.DEFAULT_TYPE, key: str, min_cap: float, max_cap: float):
     chat_id = update.effective_chat.id
-    old_msg_id = pinned_store.get(chat_id)
+    old_msg_id = pinned_messages.get((chat_id, key))
     if old_msg_id:
         try:
-            await context.bot.unpin_chat_message(chat_id=chat_id, message_id=old_msg_id)
-            await context.bot.delete_message(chat_id=chat_id, message_id=old_msg_id)
-        except Exception as e:
-            logger.warning(f"Не удалось удалить старое сообщение {tag}: {e}")
+            await context.bot.unpin_chat_message(chat_id, old_msg_id)
+            await context.bot.delete_message(chat_id, old_msg_id)
+        except:
+            pass
 
     page, timestamp = await fetch_tokens(min_cap, max_cap)
     if not page:
         return
 
-    store["page"] = page
-    store["timestamp"] = timestamp
+    for ignored in ignored_addresses.get(chat_id, set()):
+        page = "\n".join([line for line in page.splitlines() if ignored not in line])
+
+    latest_results[key] = {"page": page, "timestamp": timestamp}
     message = f"{page}\n\nОбновлено: {timestamp} (UTC+3)"
-    markup = InlineKeyboardMarkup([[InlineKeyboardButton("🔄 Обновить", callback_data=f"refresh_{tag}")]])
+    markup = InlineKeyboardMarkup([[InlineKeyboardButton("🔄 Обновить", callback_data=f"refresh_{key}")]])
     sent = await update.message.reply_text(message, parse_mode=ParseMode.HTML, disable_web_page_preview=True, reply_markup=markup)
-    await context.bot.pin_chat_message(chat_id=chat_id, message_id=sent.message_id)
-    pinned_store[chat_id] = sent.message_id
+    await context.bot.pin_chat_message(chat_id, sent.message_id)
+    pinned_messages[(chat_id, key)] = sent.message_id
 
-async def hots_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    await send_hots(update, context, 4_000, 250_000, latest_hots_result, pinned_hots_messages, "hots")
 
-async def bighots_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    await send_hots(update, context, 250_000, 10_000_000, latest_bighots_result, pinned_bighots_messages, "bighots")
-
-async def refresh_callback(update: Update, context: ContextTypes.DEFAULT_TYPE, min_cap: float, max_cap: float, store: dict, tag: str):
+async def refresh_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     await query.answer()
+    key = query.data.replace("refresh_", "")
+    min_cap, max_cap = (4_000, 250_000) if key == "hots" else (250_000, 10_000_000)
     page, timestamp = await fetch_tokens(min_cap, max_cap)
     if not page:
         return
 
-    store["page"] = page
-    store["timestamp"] = timestamp
+    chat_id = query.message.chat.id
+    for ignored in ignored_addresses.get(chat_id, set()):
+        page = "\n".join([line for line in page.splitlines() if ignored not in line])
+
+    latest_results[key] = {"page": page, "timestamp": timestamp}
     message = f"{page}\n\nОбновлено: {timestamp} (UTC+3)"
-    markup = InlineKeyboardMarkup([[InlineKeyboardButton("🔄 Обновить", callback_data=f"refresh_{tag}")]])
+    markup = InlineKeyboardMarkup([[InlineKeyboardButton("🔄 Обновить", callback_data=f"refresh_{key}")]])
     await query.edit_message_text(message, parse_mode=ParseMode.HTML, disable_web_page_preview=True, reply_markup=markup)
 
-async def refresh_hots_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    await refresh_callback(update, context, 4_000, 250_000, latest_hots_result, "hots")
 
-async def refresh_bighots_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    await refresh_callback(update, context, 250_000, 10_000_000, latest_bighots_result, "bighots")
-
-async def auto_update(context: ContextTypes.DEFAULT_TYPE, min_cap: float, max_cap: float, store: dict, pinned_store: dict, tag: str):
-    page, timestamp = await fetch_tokens(min_cap, max_cap)
-    if not page:
+async def ignore_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    chat_id = update.effective_chat.id
+    if len(context.args) != 1:
+        await update.message.reply_text("Использование: /ignore <contract_address>")
         return
-    store["page"] = page
-    store["timestamp"] = timestamp
-    message = f"{page}\n\nОбновлено: {timestamp} (UTC+3)"
-    markup = InlineKeyboardMarkup([[InlineKeyboardButton("🔄 Обновить", callback_data=f"refresh_{tag}")]])
-    for chat_id, message_id in pinned_store.items():
-        try:
-            await context.bot.edit_message_text(chat_id=chat_id, message_id=message_id, text=message, parse_mode=ParseMode.HTML, disable_web_page_preview=True, reply_markup=markup)
-        except Exception as e:
-            logger.warning(f"Не удалось обновить сообщение {tag} в чате {chat_id}: {e}")
 
-async def auto_update_hots(context: ContextTypes.DEFAULT_TYPE):
-    await auto_update(context, 4_000, 250_000, latest_hots_result, pinned_hots_messages, "hots")
+    addr = context.args[0]
+    ignored_addresses.setdefault(chat_id, set()).add(addr)
+    await update.message.reply_text(f"Контракт {addr} добавлен в игнор-лист.")
 
-async def auto_update_bighots(context: ContextTypes.DEFAULT_TYPE):
-    await auto_update(context, 250_000, 10_000_000, latest_bighots_result, pinned_bighots_messages, "bighots")
 
-if __name__ == '__main__':
+async def hots_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    await send_hot_tokens(update, context, "hots", 4_000, 250_000)
+
+
+async def bighots_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    await send_hot_tokens(update, context, "bighots", 250_000, 10_000_000)
+
+
+if __name__ == "__main__":
     app = ApplicationBuilder().token(BOT_TOKEN).build()
     app.add_handler(CommandHandler("hots", hots_command))
     app.add_handler(CommandHandler("bighots", bighots_command))
-    app.add_handler(CallbackQueryHandler(refresh_hots_callback, pattern="^refresh_hots$"))
-    app.add_handler(CallbackQueryHandler(refresh_bighots_callback, pattern="^refresh_bighots$"))
-    app.job_queue.run_repeating(auto_update_hots, interval=10, first=10)
-    app.job_queue.run_repeating(auto_update_bighots, interval=10, first=15)
-    print("Бот запущен...")
+    app.add_handler(CommandHandler("ignore", ignore_command))
+    app.add_handler(CallbackQueryHandler(refresh_callback, pattern="^refresh_"))
     app.run_polling()
