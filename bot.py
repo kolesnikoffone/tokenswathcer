@@ -45,7 +45,7 @@ async def get_ton_price():
         logger.warning(f"Не удалось получить цену TON: {e}")
     return None, 0
 
-async def fetch_tokens(sort_type: str, min_cap: float, limit: int = 40, paginated: bool = True):
+async def fetch_tokens(sort_type: str, min_cap: float, limit: int = 100, paginated: bool = True):
     if sort_type == "hot":
         limit = 90
     url = f'https://prod-api.bigpump.app/api/v1/coins?sortType={sort_type}&limit={limit}'
@@ -77,11 +77,9 @@ async def fetch_tokens(sort_type: str, min_cap: float, limit: int = 40, paginate
                                 holders = 0
 
                             if sort_type == "hot":
-                                if abs(change) < 2:
+                                if abs(change) < 1:
                                     continue
                                 if cap >= 1_000_000:
-                                    continue
-                                if holders < 15:
                                     continue
 
                             if cap >= min_cap:
@@ -155,7 +153,7 @@ async def listings_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
             logger.warning(f"Не удалось открепить/удалить старое сообщение LISTINGS: {e}")
 
     # Получить новые данные
-    pages, timestamp = await fetch_tokens("pocketfi", 11000)
+    pages, timestamp = await fetch_tokens("pocketfi", 10000)
     if pages:
         latest_tokens_result = {
             "pages": pages,
@@ -244,7 +242,7 @@ async def auto_update_hots(context: ContextTypes.DEFAULT_TYPE):
 
 async def auto_update_listings(context: ContextTypes.DEFAULT_TYPE):
     global latest_tokens_result, pinned_listings_messages
-    pages, timestamp = await fetch_tokens("pocketfi", 11000)
+    pages, timestamp = await fetch_tokens("pocketfi", 10000)
     if not pages:
         return
     latest_tokens_result = {
@@ -296,7 +294,7 @@ async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not latest_tokens_result["pages"]:
         return
     if data == "refresh":
-        pages, timestamp = await fetch_tokens("pocketfi", 11000)
+        pages, timestamp = await fetch_tokens("pocketfi", 10000)
         if pages:
             latest_tokens_result = {
                 "pages": pages,
