@@ -93,7 +93,7 @@ async def fetch_tokens(sort_type: str, min_cap: float, limit: int = 90, paginate
                             name = token.get('name', 'N/A')
                             symbol = token.get('symbol', 'N/A')
                             address = token.get('address')
-                            change = token.get('priceChange1H')
+                            change = token.get('priceChange24H')
 
                             if cap >= 1_000_000:
                                 mcap = f"<b>${cap / 1_000_000:.1f}M</b>"
