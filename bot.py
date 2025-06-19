@@ -4,7 +4,7 @@ import aiohttp
 from pytoniq_core import Address
 from telegram import InlineKeyboardButton, InlineKeyboardMarkup, Update
 from telegram.constants import ParseMode
-from telegram.ext import ApplicationBuilder, CommandHandler, CallbackQueryHandler, ContextTypes
+from telegram.ext import ApplicationBuilder, CommandHandler, CallbackQueryHandler, ContextTypes, JobQueue
 from datetime import datetime, timedelta
 
 BOT_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN")
@@ -18,13 +18,22 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 REFERRAL_PREFIX = "213213722_"
-IGNORE_LIST_URL = "https://raw.githubusercontent.com/kolesnikoffone/tokenswathcer/refs/heads/main/ignore_list.txt"
-
 latest_hots_result = {"page": "", "timestamp": ""}
 latest_bighots_result = {"page": "", "timestamp": ""}
 pinned_hots_messages = {}
 pinned_bighots_messages = {}
 
+IGNORE_LIST_URL = "https://raw.githubusercontent.com/kolesnikoffone/tokenswathcer/refs/heads/main/ignore_list.txt"
+
+async def load_ignore_list():
+    try:
+        async with aiohttp.ClientSession() as session:
+            async with session.get(IGNORE_LIST_URL) as response:
+                text = await response.text()
+                return set(line.strip() for line in text.splitlines() if line.strip())
+    except Exception as e:
+        logger.warning(f"Не удалось загрузить ignore_list: {e}")
+        return set()
 
 def address_to_base64url(address: str) -> str:
     return Address(address).to_str(
@@ -34,22 +43,9 @@ def address_to_base64url(address: str) -> str:
         is_url_safe=True
     )
 
-
-async def get_ignore_list() -> set:
-    try:
-        async with aiohttp.ClientSession() as session:
-            async with session.get(IGNORE_LIST_URL) as resp:
-                if resp.status == 200:
-                    text = await resp.text()
-                    return set(line.strip() for line in text.splitlines() if line.strip())
-    except Exception as e:
-        logger.warning(f"Ошибка загрузки ignore_list: {e}")
-    return set()
-
-
 async def fetch_tokens(min_cap: float, max_cap: float):
-    ignore_addresses = await get_ignore_list()
     url = 'https://mempad-domain.blum.codes/api/v1/jetton/sections/hot?published=include&source=all'
+    ignores = await load_ignore_list()
     try:
         async with aiohttp.ClientSession() as session:
             async with session.get(url) as response:
@@ -58,11 +54,12 @@ async def fetch_tokens(min_cap: float, max_cap: float):
                 filtered = []
                 for token in tokens:
                     try:
-                        address = token.get("address")
-                        if address in ignore_addresses:
-                            continue
                         change = float(token.get("stats", {}).get("price24hChange", 0))
                         cap = float(token.get("stats", {}).get("marketCap", 0))
+                        address = token.get("masterContractAddress")
+
+                        if not address or address in ignores:
+                            continue
                         if abs(change) < 2:
                             continue
                         if min_cap <= cap <= max_cap:
@@ -70,32 +67,31 @@ async def fetch_tokens(min_cap: float, max_cap: float):
                     except:
                         continue
                 result = []
-                for token, cap in filtered[:10]:
+                for idx, (token, cap) in enumerate(filtered[:10], 1):
+                    name = token.get("name", "N/A")
                     symbol = token.get("ticker", "")
                     change = float(token.get("stats", {}).get("price24hChange", 0))
-                    address = token.get("address")
+                    address = token.get("masterContractAddress")
 
                     mcap = f"${cap/1e6:.1f}M" if cap >= 1_000_000 else f"${cap/1e3:.1f}K"
+
                     try:
-                        encoded = address_to_base64url(address)
-                        link = f"https://t.me/dtrade?start={REFERRAL_PREFIX}{encoded}"
+                        encoded_address = address_to_base64url(address)
+                        link = f"https://t.me/dtrade?start={REFERRAL_PREFIX}{encoded_address}"
                         name_symbol = f'<a href="{link}">{symbol}</a>'
                     except:
-                        name_symbol = symbol
+                        name_symbol = f'{symbol}'
 
-                    emoji = "💎" if change >= 100 else "🤑" if change >= 50 else "🚀" if change >= 25 else \
-                            "💸" if change >= 10 else "📈" if change >= 5 else "🥹" if change > 0 else \
-                            "🫥" if change > -1 else "📉" if change > -5 else "💔" if change > -10 else \
-                            "😭" if change > -25 else "🤡"
+                    emoji = "💎" if change >= 100 else "🤑" if change >= 50 else "🚀" if change >= 25 else "💸" if change >= 10 else "📈" if change >= 5 else "🥹" if change > 0 else "🫥" if change > -1 else "📉" if change > -5 else "💔" if change > -10 else "😭" if change > -25 else "🤡"
                     growth_str = f"{emoji} {change:+.2f}%"
-                    result.append(f"├{growth_str} • {name_symbol} • {mcap}")
+                    line = f"├{growth_str} • {name_symbol} • {mcap}"
+                    result.append(line)
 
                 timestamp = (datetime.utcnow() + timedelta(hours=3)).strftime("%d.%m.%Y %H:%M:%S")
                 return "\n".join(result), timestamp
     except Exception as e:
         logger.error(f"Ошибка получения токенов: {e}")
         return "", ""
-
 
 async def send_hots(update: Update, context: ContextTypes.DEFAULT_TYPE, min_cap, max_cap, store, pinned_store, tag):
     chat_id = update.effective_chat.id
