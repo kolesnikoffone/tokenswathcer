@@ -137,7 +137,7 @@ async def send_hots(update: Update, context: ContextTypes.DEFAULT_TYPE, min_cap:
 
     store["page"] = page
     store["timestamp"] = timestamp
-    message = f"{page}\n\⏳: {timestamp}"
+    message = f"{page}\n\n⏳: {timestamp}"
     markup = InlineKeyboardMarkup([[InlineKeyboardButton("🔄 Обновить", callback_data=f"refresh_{tag}")]])
     sent = await update.message.reply_text(message, parse_mode=ParseMode.HTML, disable_web_page_preview=True, reply_markup=markup)
     await context.bot.pin_chat_message(chat_id=chat_id, message_id=sent.message_id)
@@ -158,7 +158,7 @@ async def refresh_callback(update: Update, context: ContextTypes.DEFAULT_TYPE, m
 
     store["page"] = page
     store["timestamp"] = timestamp
-    message = f"{page}\n\⏳: {timestamp}"
+    message = f"{page}\n\n⏳: {timestamp}"
     markup = InlineKeyboardMarkup([[InlineKeyboardButton("🔄 Обновить", callback_data=f"refresh_{tag}")]])
     await query.edit_message_text(message, parse_mode=ParseMode.HTML, disable_web_page_preview=True, reply_markup=markup)
 
