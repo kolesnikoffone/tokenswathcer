@@ -1,10 +1,10 @@
-import logging
+""import logging
 import os
 import aiohttp
 from pytoniq_core import Address
-from telegram import InlineKeyboardButton, InlineKeyboardMarkup, Update
+from telegram import Update
 from telegram.constants import ParseMode
-from telegram.ext import ApplicationBuilder, CommandHandler, CallbackQueryHandler, ContextTypes, JobQueue
+from telegram.ext import ApplicationBuilder, CommandHandler, ContextTypes, JobQueue
 from datetime import datetime, timedelta
 
 BOT_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN")
@@ -120,7 +120,7 @@ async def fetch_tokens(min_cap: float, max_cap: float):
     except Exception as e:
         logger.error(f"Ошибка получения токенов: {e}")
         return "", ""
-        
+
 async def send_hots(update: Update, context: ContextTypes.DEFAULT_TYPE, min_cap: float, max_cap: float, store: dict, pinned_store: dict, tag: str):
     chat_id = update.effective_chat.id
     old_msg_id = pinned_store.get(chat_id)
@@ -137,9 +137,8 @@ async def send_hots(update: Update, context: ContextTypes.DEFAULT_TYPE, min_cap:
 
     store["page"] = page
     store["timestamp"] = timestamp
-    message = f"{page}\n\n⏳: {timestamp}"
-    markup = InlineKeyboardMarkup([[InlineKeyboardButton("🔄 Обновить", callback_data=f"refresh_{tag}")]])
-    sent = await update.message.reply_text(message, parse_mode=ParseMode.HTML, disable_web_page_preview=True, reply_markup=markup)
+    message = f"{page}\n\n{timestamp}"
+    sent = await update.message.reply_text(message, parse_mode=ParseMode.HTML, disable_web_page_preview=True)
     await context.bot.pin_chat_message(chat_id=chat_id, message_id=sent.message_id)
     pinned_store[chat_id] = sent.message_id
 
@@ -149,36 +148,16 @@ async def hots_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
 async def bighots_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await send_hots(update, context, 100_000, 10_000_000, latest_bighots_result, pinned_bighots_messages, "bighots")
 
-async def refresh_callback(update: Update, context: ContextTypes.DEFAULT_TYPE, min_cap: float, max_cap: float, store: dict, tag: str):
-    query = update.callback_query
-    await query.answer()
-    page, timestamp = await fetch_tokens(min_cap, max_cap)
-    if not page:
-        return
-
-    store["page"] = page
-    store["timestamp"] = timestamp
-    message = f"{page}\n\n⏳: {timestamp}"
-    markup = InlineKeyboardMarkup([[InlineKeyboardButton("🔄 Обновить", callback_data=f"refresh_{tag}")]])
-    await query.edit_message_text(message, parse_mode=ParseMode.HTML, disable_web_page_preview=True, reply_markup=markup)
-
-async def refresh_hots_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    await refresh_callback(update, context, 3_500, 100_000, latest_hots_result, "hots")
-
-async def refresh_bighots_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    await refresh_callback(update, context, 100_000, 10_000_000, latest_bighots_result, "bighots")
-
 async def auto_update(context: ContextTypes.DEFAULT_TYPE, min_cap: float, max_cap: float, store: dict, pinned_store: dict, tag: str):
     page, timestamp = await fetch_tokens(min_cap, max_cap)
     if not page:
         return
     store["page"] = page
     store["timestamp"] = timestamp
-    message = f"{page}\n\n⏳: {timestamp}"
-    markup = InlineKeyboardMarkup([[InlineKeyboardButton("🔄 Обновить", callback_data=f"refresh_{tag}")]])
+    message = f"{page}\n\n{timestamp}"
     for chat_id, message_id in pinned_store.items():
         try:
-            await context.bot.edit_message_text(chat_id=chat_id, message_id=message_id, text=message, parse_mode=ParseMode.HTML, disable_web_page_preview=True, reply_markup=markup)
+            await context.bot.edit_message_text(chat_id=chat_id, message_id=message_id, text=message, parse_mode=ParseMode.HTML, disable_web_page_preview=True)
         except Exception as e:
             logger.warning(f"Не удалось обновить сообщение {tag} в чате {chat_id}: {e}")
 
@@ -192,8 +171,6 @@ if __name__ == '__main__':
     app = ApplicationBuilder().token(BOT_TOKEN).build()
     app.add_handler(CommandHandler("hots", hots_command))
     app.add_handler(CommandHandler("bighots", bighots_command))
-    app.add_handler(CallbackQueryHandler(refresh_hots_callback, pattern="^refresh_hots$"))
-    app.add_handler(CallbackQueryHandler(refresh_bighots_callback, pattern="^refresh_bighots$"))
     app.job_queue.run_repeating(auto_update_hots, interval=20, first=20)
     app.job_queue.run_repeating(auto_update_bighots, interval=20, first=25)
     print("Бот запущен...")
