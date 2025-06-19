@@ -144,10 +144,10 @@ async def send_hots(update: Update, context: ContextTypes.DEFAULT_TYPE, min_cap:
     pinned_store[chat_id] = sent.message_id
 
 async def hots_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    await send_hots(update, context, 4_000, 250_000, latest_hots_result, pinned_hots_messages, "hots")
+    await send_hots(update, context, 3_500, 100_000, latest_hots_result, pinned_hots_messages, "hots")
 
 async def bighots_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    await send_hots(update, context, 250_000, 10_000_000, latest_bighots_result, pinned_bighots_messages, "bighots")
+    await send_hots(update, context, 100_000, 10_000_000, latest_bighots_result, pinned_bighots_messages, "bighots")
 
 async def refresh_callback(update: Update, context: ContextTypes.DEFAULT_TYPE, min_cap: float, max_cap: float, store: dict, tag: str):
     query = update.callback_query
@@ -163,10 +163,10 @@ async def refresh_callback(update: Update, context: ContextTypes.DEFAULT_TYPE, m
     await query.edit_message_text(message, parse_mode=ParseMode.HTML, disable_web_page_preview=True, reply_markup=markup)
 
 async def refresh_hots_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    await refresh_callback(update, context, 4_000, 250_000, latest_hots_result, "hots")
+    await refresh_callback(update, context, 3_500, 100_000, latest_hots_result, "hots")
 
 async def refresh_bighots_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    await refresh_callback(update, context, 250_000, 10_000_000, latest_bighots_result, "bighots")
+    await refresh_callback(update, context, 100_000, 10_000_000, latest_bighots_result, "bighots")
 
 async def auto_update(context: ContextTypes.DEFAULT_TYPE, min_cap: float, max_cap: float, store: dict, pinned_store: dict, tag: str):
     page, timestamp = await fetch_tokens(min_cap, max_cap)
