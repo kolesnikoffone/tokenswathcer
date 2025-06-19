@@ -137,7 +137,7 @@ async def send_hots(update: Update, context: ContextTypes.DEFAULT_TYPE, min_cap:
 
     store["page"] = page
     store["timestamp"] = timestamp
-    message = f"{page}\n\nОбновлено: {timestamp} (UTC+3)"
+    message = f"{page}\n\⏳: {timestamp}"
     markup = InlineKeyboardMarkup([[InlineKeyboardButton("🔄 Обновить", callback_data=f"refresh_{tag}")]])
     sent = await update.message.reply_text(message, parse_mode=ParseMode.HTML, disable_web_page_preview=True, reply_markup=markup)
     await context.bot.pin_chat_message(chat_id=chat_id, message_id=sent.message_id)
@@ -158,7 +158,7 @@ async def refresh_callback(update: Update, context: ContextTypes.DEFAULT_TYPE, m
 
     store["page"] = page
     store["timestamp"] = timestamp
-    message = f"{page}\n\nОбновлено: {timestamp} (UTC+3)"
+    message = f"{page}\n\⏳: {timestamp}"
     markup = InlineKeyboardMarkup([[InlineKeyboardButton("🔄 Обновить", callback_data=f"refresh_{tag}")]])
     await query.edit_message_text(message, parse_mode=ParseMode.HTML, disable_web_page_preview=True, reply_markup=markup)
 
@@ -174,7 +174,7 @@ async def auto_update(context: ContextTypes.DEFAULT_TYPE, min_cap: float, max_ca
         return
     store["page"] = page
     store["timestamp"] = timestamp
-    message = f"{page}\n\nОбновлено: {timestamp} (UTC+3)"
+    message = f"{page}\n\n⏳: {timestamp}"
     markup = InlineKeyboardMarkup([[InlineKeyboardButton("🔄 Обновить", callback_data=f"refresh_{tag}")]])
     for chat_id, message_id in pinned_store.items():
         try:
@@ -183,10 +183,10 @@ async def auto_update(context: ContextTypes.DEFAULT_TYPE, min_cap: float, max_ca
             logger.warning(f"Не удалось обновить сообщение {tag} в чате {chat_id}: {e}")
 
 async def auto_update_hots(context: ContextTypes.DEFAULT_TYPE):
-    await auto_update(context, 4_000, 250_000, latest_hots_result, pinned_hots_messages, "hots")
+    await auto_update(context, 3_500, 100_000, latest_hots_result, pinned_hots_messages, "hots")
 
 async def auto_update_bighots(context: ContextTypes.DEFAULT_TYPE):
-    await auto_update(context, 250_000, 10_000_000, latest_bighots_result, pinned_bighots_messages, "bighots")
+    await auto_update(context, 100_000, 10_000_000, latest_bighots_result, pinned_bighots_messages, "bighots")
 
 if __name__ == '__main__':
     app = ApplicationBuilder().token(BOT_TOKEN).build()
@@ -194,7 +194,7 @@ if __name__ == '__main__':
     app.add_handler(CommandHandler("bighots", bighots_command))
     app.add_handler(CallbackQueryHandler(refresh_hots_callback, pattern="^refresh_hots$"))
     app.add_handler(CallbackQueryHandler(refresh_bighots_callback, pattern="^refresh_bighots$"))
-    app.job_queue.run_repeating(auto_update_hots, interval=10, first=10)
-    app.job_queue.run_repeating(auto_update_bighots, interval=10, first=15)
+    app.job_queue.run_repeating(auto_update_hots, interval=20, first=20)
+    app.job_queue.run_repeating(auto_update_bighots, interval=20, first=25)
     print("Бот запущен...")
     app.run_polling()
