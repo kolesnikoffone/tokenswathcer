@@ -58,8 +58,21 @@ async def fetch_tokens(min_cap: float, max_cap: float):
                 filtered = []
                 for token in tokens:
                     try:
-                        address = token.get("address") or token.get("masterContractAddress")
-                        if not address or address in ignore_set:
+                        raw_address = token.get("address") or token.get("masterContractAddress")
+                        if not raw_address:
+                            continue
+
+                        try:
+                            normalized_address = Address(raw_address).to_str(
+                                is_user_friendly=True,
+                                is_bounceable=True,
+                                is_test_only=False,
+                                is_url_safe=True
+                            )
+                        except Exception:
+                            continue
+
+                        if normalized_address in ignore_set:
                             continue
 
                         change = float(token.get("stats", {}).get("price24hChange", 0))
@@ -76,6 +89,16 @@ async def fetch_tokens(min_cap: float, max_cap: float):
                     symbol = token.get("ticker", "")
                     change = float(token.get("stats", {}).get("price24hChange", 0))
                     address = token.get("address") or token.get("masterContractAddress")
+
+                    try:
+                        address = Address(address).to_str(
+                            is_user_friendly=True,
+                            is_bounceable=True,
+                            is_test_only=False,
+                            is_url_safe=True
+                        )
+                    except Exception:
+                        pass
 
                     mcap = f"${cap/1e6:.1f}M" if cap >= 1_000_000 else f"${cap/1e3:.1f}K"
 
@@ -96,7 +119,7 @@ async def fetch_tokens(min_cap: float, max_cap: float):
     except Exception as e:
         logger.error(f"Ошибка получения токенов: {e}")
         return "", ""
-
+        
 async def send_hots(update: Update, context: ContextTypes.DEFAULT_TYPE, min_cap: float, max_cap: float, store: dict, pinned_store: dict, tag: str):
     chat_id = update.effective_chat.id
     old_msg_id = pinned_store.get(chat_id)
