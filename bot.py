@@ -1,10 +1,10 @@
-import os
 import logging
+import os
 import aiohttp
 from pytoniq_core import Address
 from telegram import InlineKeyboardButton, InlineKeyboardMarkup, Update
 from telegram.constants import ParseMode
-from telegram.ext import ApplicationBuilder, CommandHandler, CallbackQueryHandler, ContextTypes
+from telegram.ext import ApplicationBuilder, CommandHandler, CallbackQueryHandler, ContextTypes, JobQueue
 from datetime import datetime, timedelta
 
 BOT_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN")
@@ -18,6 +18,8 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 REFERRAL_PREFIX = "213213722_"
+IGNORE_LIST_PATH = "ignore_list.txt"
+
 latest_hots_result = {"page": "", "timestamp": ""}
 latest_bighots_result = {"page": "", "timestamp": ""}
 pinned_hots_messages = {}
@@ -31,38 +33,38 @@ def address_to_base64url(address: str) -> str:
         is_url_safe=True
     )
 
-def load_ignored_addresses():
-    try:
-        with open("ignore_list.txt", "r") as f:
-            return set(line.strip() for line in f if line.strip())
-    except FileNotFoundError:
+def load_ignore_list():
+    if not os.path.exists(IGNORE_LIST_PATH):
         return set()
+    with open(IGNORE_LIST_PATH, "r") as f:
+        return set(line.strip() for line in f if line.strip())
 
 async def fetch_tokens(min_cap: float, max_cap: float):
     url = 'https://mempad-domain.blum.codes/api/v1/jetton/sections/hot?published=include&source=all'
+    ignore_addresses = load_ignore_list()
+
     try:
         async with aiohttp.ClientSession() as session:
             async with session.get(url) as response:
                 data = await response.json()
                 tokens = data.get("jettons", [])
-                ignored_addresses = load_ignored_addresses()
                 filtered = []
                 for token in tokens:
                     try:
+                        address = token.get("address")
+                        if address in ignore_addresses:
+                            continue
                         change = float(token.get("stats", {}).get("price24hChange", 0))
                         cap = float(token.get("stats", {}).get("marketCap", 0))
-                        address = token.get("address")
-                        if not address or address in ignored_addresses:
-                            continue
                         if abs(change) < 2:
                             continue
                         if min_cap <= cap <= max_cap:
                             filtered.append((token, cap))
                     except:
                         continue
+
                 result = []
                 for idx, (token, cap) in enumerate(filtered[:10], 1):
-                    name = token.get("name", "N/A")
                     symbol = token.get("ticker", "")
                     change = float(token.get("stats", {}).get("price24hChange", 0))
                     address = token.get("address")
