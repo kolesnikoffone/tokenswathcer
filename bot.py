@@ -23,7 +23,7 @@ latest_bighots_result = {"page": "", "timestamp": ""}
 pinned_hots_messages = {}
 pinned_bighots_messages = {}
 
-IGNORE_LIST_URL = "https://raw.githubusercontent.com/kolesnikoffone/tokenswathcer/refs/heads/main/ignore_list.txt"
+IGNORE_LIST_URL = "https://raw.githubusercontent.com/kolesnikoffone/savefiles/refs/heads/main/ignore_list.txt"
 
 async def load_ignore_list():
     try:
