@@ -18,12 +18,23 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 REFERRAL_PREFIX = "213213722_"
-IGNORE_LIST_PATH = "ignore_list.txt"
-
 latest_hots_result = {"page": "", "timestamp": ""}
 latest_bighots_result = {"page": "", "timestamp": ""}
 pinned_hots_messages = {}
 pinned_bighots_messages = {}
+
+IGNORE_FILE = 'ignore_list.txt'
+ignore_addresses = set()
+
+def load_ignore():
+    global ignore_addresses
+    try:
+        with open(IGNORE_FILE, 'r') as f:
+            ignore_addresses = {line.strip() for line in f if line.strip()}
+        logger.info(f"Загружено {len(ignore_addresses)} адресов в игнор-лист")
+    except FileNotFoundError:
+        logger.warning(f"{IGNORE_FILE} не найден, игнор-лист пуст")
+        ignore_addresses = set()
 
 def address_to_base64url(address: str) -> str:
     return Address(address).to_str(
@@ -33,16 +44,8 @@ def address_to_base64url(address: str) -> str:
         is_url_safe=True
     )
 
-def load_ignore_list():
-    if not os.path.exists(IGNORE_LIST_PATH):
-        return set()
-    with open(IGNORE_LIST_PATH, "r") as f:
-        return set(line.strip() for line in f if line.strip())
-
 async def fetch_tokens(min_cap: float, max_cap: float):
     url = 'https://mempad-domain.blum.codes/api/v1/jetton/sections/hot?published=include&source=all'
-    ignore_addresses = load_ignore_list()
-
     try:
         async with aiohttp.ClientSession() as session:
             async with session.get(url) as response:
@@ -54,6 +57,7 @@ async def fetch_tokens(min_cap: float, max_cap: float):
                         address = token.get("address")
                         if address in ignore_addresses:
                             continue
+
                         change = float(token.get("stats", {}).get("price24hChange", 0))
                         cap = float(token.get("stats", {}).get("marketCap", 0))
                         if abs(change) < 2:
@@ -62,9 +66,9 @@ async def fetch_tokens(min_cap: float, max_cap: float):
                             filtered.append((token, cap))
                     except:
                         continue
-
                 result = []
                 for idx, (token, cap) in enumerate(filtered[:10], 1):
+                    name = token.get("name", "N/A")
                     symbol = token.get("ticker", "")
                     change = float(token.get("stats", {}).get("price24hChange", 0))
                     address = token.get("address")
@@ -157,6 +161,7 @@ async def auto_update_bighots(context: ContextTypes.DEFAULT_TYPE):
     await auto_update(context, 250_000, 10_000_000, latest_bighots_result, pinned_bighots_messages, "bighots")
 
 if __name__ == '__main__':
+    load_ignore()
     app = ApplicationBuilder().token(BOT_TOKEN).build()
     app.add_handler(CommandHandler("hots", hots_command))
     app.add_handler(CommandHandler("bighots", bighots_command))
