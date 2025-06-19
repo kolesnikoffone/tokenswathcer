@@ -23,17 +23,6 @@ latest_bighots_result = {"page": "", "timestamp": ""}
 pinned_hots_messages = {}
 pinned_bighots_messages = {}
 
-IGNORE_LIST_URL = "https://raw.githubusercontent.com/kolesnikoffone/savefiles/refs/heads/main/ignore_list.txt"
-
-async def load_ignore_list():
-    try:
-        async with aiohttp.ClientSession() as session:
-            async with session.get(IGNORE_LIST_URL) as response:
-                text = await response.text()
-                return set(line.strip() for line in text.splitlines() if line.strip())
-    except Exception as e:
-        logger.warning(f"Не удалось загрузить ignore_list: {e}")
-        return set()
 
 def address_to_base64url(address: str) -> str:
     return Address(address).to_str(
@@ -43,10 +32,23 @@ def address_to_base64url(address: str) -> str:
         is_url_safe=True
     )
 
+
+async def load_ignores() -> set:
+    try:
+        url = "https://raw.githubusercontent.com/kolesnikoffone/savefiles/main/ignore_list.txt"
+        async with aiohttp.ClientSession() as session:
+            async with session.get(url) as resp:
+                text = await resp.text()
+                return set(line.strip() for line in text.splitlines() if line.strip())
+    except Exception as e:
+        logger.warning(f"Не удалось загрузить ignore_list: {e}")
+        return set()
+
+
 async def fetch_tokens(min_cap: float, max_cap: float):
     url = 'https://mempad-domain.blum.codes/api/v1/jetton/sections/hot?published=include&source=all'
-    ignores = await load_ignore_list()
     try:
+        ignores = await load_ignores()
         async with aiohttp.ClientSession() as session:
             async with session.get(url) as response:
                 data = await response.json()
@@ -57,7 +59,6 @@ async def fetch_tokens(min_cap: float, max_cap: float):
                         change = float(token.get("stats", {}).get("price24hChange", 0))
                         cap = float(token.get("stats", {}).get("marketCap", 0))
                         address = token.get("masterContractAddress")
-
                         if not address or address in ignores:
                             continue
                         if abs(change) < 2:
@@ -93,13 +94,14 @@ async def fetch_tokens(min_cap: float, max_cap: float):
         logger.error(f"Ошибка получения токенов: {e}")
         return "", ""
 
-async def send_hots(update: Update, context: ContextTypes.DEFAULT_TYPE, min_cap, max_cap, store, pinned_store, tag):
+
+async def send_hots(update: Update, context: ContextTypes.DEFAULT_TYPE, min_cap: float, max_cap: float, store: dict, pinned_store: dict, tag: str):
     chat_id = update.effective_chat.id
     old_msg_id = pinned_store.get(chat_id)
     if old_msg_id:
         try:
-            await context.bot.unpin_chat_message(chat_id, old_msg_id)
-            await context.bot.delete_message(chat_id, old_msg_id)
+            await context.bot.unpin_chat_message(chat_id=chat_id, message_id=old_msg_id)
+            await context.bot.delete_message(chat_id=chat_id, message_id=old_msg_id)
         except Exception as e:
             logger.warning(f"Не удалось удалить старое сообщение {tag}: {e}")
 
@@ -112,7 +114,7 @@ async def send_hots(update: Update, context: ContextTypes.DEFAULT_TYPE, min_cap,
     message = f"{page}\n\nОбновлено: {timestamp} (UTC+3)"
     markup = InlineKeyboardMarkup([[InlineKeyboardButton("🔄 Обновить", callback_data=f"refresh_{tag}")]])
     sent = await update.message.reply_text(message, parse_mode=ParseMode.HTML, disable_web_page_preview=True, reply_markup=markup)
-    await context.bot.pin_chat_message(chat_id, sent.message_id)
+    await context.bot.pin_chat_message(chat_id=chat_id, message_id=sent.message_id)
     pinned_store[chat_id] = sent.message_id
 
 
@@ -124,12 +126,13 @@ async def bighots_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await send_hots(update, context, 250_000, 10_000_000, latest_bighots_result, pinned_bighots_messages, "bighots")
 
 
-async def refresh_callback(update: Update, context: ContextTypes.DEFAULT_TYPE, min_cap, max_cap, store, tag):
+async def refresh_callback(update: Update, context: ContextTypes.DEFAULT_TYPE, min_cap: float, max_cap: float, store: dict, tag: str):
     query = update.callback_query
     await query.answer()
     page, timestamp = await fetch_tokens(min_cap, max_cap)
     if not page:
         return
+
     store["page"] = page
     store["timestamp"] = timestamp
     message = f"{page}\n\nОбновлено: {timestamp} (UTC+3)"
@@ -145,7 +148,7 @@ async def refresh_bighots_callback(update: Update, context: ContextTypes.DEFAULT
     await refresh_callback(update, context, 250_000, 10_000_000, latest_bighots_result, "bighots")
 
 
-async def auto_update(context: ContextTypes.DEFAULT_TYPE, min_cap, max_cap, store, pinned_store, tag):
+async def auto_update(context: ContextTypes.DEFAULT_TYPE, min_cap: float, max_cap: float, store: dict, pinned_store: dict, tag: str):
     page, timestamp = await fetch_tokens(min_cap, max_cap)
     if not page:
         return
