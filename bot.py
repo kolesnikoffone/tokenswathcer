@@ -77,7 +77,8 @@ async def fetch_tokens(min_cap: float, max_cap: float):
 
                         change = float(token.get("stats", {}).get("price24hChange", 0))
                         cap = float(token.get("stats", {}).get("marketCap", 0))
-                        if abs(change) < 2:
+                        volume = float(token.get("stats", {}).get("volume", 0))
+                        if abs(change) < 2 or volume < 3800:
                             continue
                         if min_cap <= cap <= max_cap:
                             filtered.append((token, cap))
