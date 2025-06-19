@@ -75,7 +75,7 @@ async def fetch_tokens(min_cap: float, max_cap: float):
                     name = token.get("name", "N/A")
                     symbol = token.get("ticker", "")
                     change = float(token.get("stats", {}).get("price24hChange", 0))
-                    address = token.get("address")
+                    address = token.get("address") or token.get("masterContractAddress")
 
                     mcap = f"${cap/1e6:.1f}M" if cap >= 1_000_000 else f"${cap/1e3:.1f}K"
 
