@@ -1,10 +1,10 @@
-import logging
 import os
+import logging
 import aiohttp
 from pytoniq_core import Address
 from telegram import InlineKeyboardButton, InlineKeyboardMarkup, Update
 from telegram.constants import ParseMode
-from telegram.ext import ApplicationBuilder, CommandHandler, CallbackQueryHandler, ContextTypes, JobQueue
+from telegram.ext import ApplicationBuilder, CommandHandler, CallbackQueryHandler, ContextTypes
 from datetime import datetime, timedelta
 
 BOT_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN")
@@ -31,6 +31,13 @@ def address_to_base64url(address: str) -> str:
         is_url_safe=True
     )
 
+def load_ignored_addresses():
+    try:
+        with open("ignore_list.txt", "r") as f:
+            return set(line.strip() for line in f if line.strip())
+    except FileNotFoundError:
+        return set()
+
 async def fetch_tokens(min_cap: float, max_cap: float):
     url = 'https://mempad-domain.blum.codes/api/v1/jetton/sections/hot?published=include&source=all'
     try:
@@ -38,11 +45,15 @@ async def fetch_tokens(min_cap: float, max_cap: float):
             async with session.get(url) as response:
                 data = await response.json()
                 tokens = data.get("jettons", [])
+                ignored_addresses = load_ignored_addresses()
                 filtered = []
                 for token in tokens:
                     try:
                         change = float(token.get("stats", {}).get("price24hChange", 0))
                         cap = float(token.get("stats", {}).get("marketCap", 0))
+                        address = token.get("address")
+                        if not address or address in ignored_addresses:
+                            continue
                         if abs(change) < 2:
                             continue
                         if min_cap <= cap <= max_cap:
