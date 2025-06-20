@@ -21,8 +21,8 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 REFERRAL_PREFIX = "213213722_"
-latest_hots_result = {"page": "", "timestamp": ""}
-latest_bighots_result = {"page": "", "timestamp": ""}
+latest_hots_result = {"page": "", "timestamp": "", "ton_price": ""}
+latest_bighots_result = {"page": "", "timestamp": "", "ton_price": ""}
 pinned_hots_messages = {}
 pinned_bighots_messages = {}
 
@@ -46,8 +46,20 @@ async def update_ignore_list():
     except Exception as e:
         logger.warning(f"⚠️ Не удалось обновить ignore list: {e}")
 
+async def fetch_ton_price():
+    url = "https://api.geckoterminal.com/api/v2/networks/ton/coins/toncoin"
+    try:
+        async with aiohttp.ClientSession() as session:
+            async with session.get(url) as response:
+                data = await response.json()
+                return data.get("data", {}).get("attributes", {}).get("price_usd", "")
+    except Exception as e:
+        logger.warning(f"⚠️ Не удалось получить цену TON: {e}")
+        return ""
+
 async def fetch_tokens(min_cap: float, max_cap: float):
     await update_ignore_list()
+    ton_price = await fetch_ton_price()
 
     url = 'https://mempad-domain.blum.codes/api/v1/jetton/sections/hot?published=include&source=all'
     try:
@@ -116,10 +128,10 @@ async def fetch_tokens(min_cap: float, max_cap: float):
                     result.append(line)
 
                 timestamp = (datetime.utcnow() + timedelta(hours=3)).strftime("%d.%m.%Y %H:%M:%S")
-                return "\n".join(result), timestamp
+                return "\n".join(result), timestamp, ton_price
     except Exception as e:
         logger.error(f"Ошибка получения токенов: {e}")
-        return "", ""
+        return "", "", ton_price
 
 async def send_hots(update: Update, context: ContextTypes.DEFAULT_TYPE, min_cap: float, max_cap: float, store: dict, pinned_store: dict, tag: str):
     chat_id = update.effective_chat.id
@@ -131,13 +143,15 @@ async def send_hots(update: Update, context: ContextTypes.DEFAULT_TYPE, min_cap:
         except Exception as e:
             logger.warning(f"Не удалось удалить старое сообщение {tag}: {e}")
 
-    page, timestamp = await fetch_tokens(min_cap, max_cap)
+    page, timestamp, ton_price = await fetch_tokens(min_cap, max_cap)
     if not page:
         return
 
     store["page"] = page
     store["timestamp"] = timestamp
-    message = f"{page}\n\n{timestamp}"
+    store["ton_price"] = ton_price
+    ton_line = f"TON: ${ton_price}" if ton_price else ""
+    message = f"{page}\n\n{ton_line}\n{timestamp}" if ton_line else f"{page}\n\n{timestamp}"
     sent = await update.message.reply_text(message, parse_mode=ParseMode.HTML, disable_web_page_preview=True)
     await context.bot.pin_chat_message(chat_id=chat_id, message_id=sent.message_id)
     pinned_store[chat_id] = sent.message_id
@@ -149,12 +163,14 @@ async def bighots_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await send_hots(update, context, 100_000, 10_000_000, latest_bighots_result, pinned_bighots_messages, "bighots")
 
 async def auto_update(context: ContextTypes.DEFAULT_TYPE, min_cap: float, max_cap: float, store: dict, pinned_store: dict, tag: str):
-    page, timestamp = await fetch_tokens(min_cap, max_cap)
+    page, timestamp, ton_price = await fetch_tokens(min_cap, max_cap)
     if not page:
         return
     store["page"] = page
     store["timestamp"] = timestamp
-    message = f"{page}\n\n{timestamp}"
+    store["ton_price"] = ton_price
+    ton_line = f"TON: ${ton_price}" if ton_price else ""
+    message = f"{page}\n\n{ton_line}\n{timestamp}" if ton_line else f"{page}\n\n{timestamp}"
     for chat_id, message_id in pinned_store.items():
         try:
             await context.bot.edit_message_text(chat_id=chat_id, message_id=message_id, text=message, parse_mode=ParseMode.HTML, disable_web_page_preview=True)
