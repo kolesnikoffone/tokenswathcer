@@ -47,14 +47,15 @@ async def update_ignore_list():
         logger.warning(f"⚠️ Не удалось обновить ignore list: {e}")
 
 async def fetch_ton_price():
-    url = "https://api.geckoterminal.com/api/v2/networks/ton/coins/toncoin"
+    url = "https://api.binance.com/api/v3/ticker/price?symbol=TONUSDT"
     try:
         async with aiohttp.ClientSession() as session:
             async with session.get(url) as response:
                 data = await response.json()
-                return data.get("data", {}).get("attributes", {}).get("price_usd", "")
+                price = data.get("price", "")
+                return f"{float(price):.2f}" if price else ""
     except Exception as e:
-        logger.warning(f"⚠️ Не удалось получить цену TON: {e}")
+        logger.warning(f"⚠️ Не удалось получить цену TON с Binance: {e}")
         return ""
 
 async def fetch_tokens(min_cap: float, max_cap: float):
