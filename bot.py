@@ -4,7 +4,7 @@ import aiohttp
 from pytoniq_core import Address
 from telegram import Update
 from telegram.constants import ParseMode
-from telegram.ext import ApplicationBuilder, CommandHandler, ContextTypes, JobQueue
+from telegram.ext import ApplicationBuilder, CommandHandler, ContextTypes
 from datetime import datetime, timedelta
 
 BOT_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN")
@@ -134,7 +134,7 @@ async def fetch_tokens(min_cap: float, max_cap: float):
         logger.error(f"Ошибка получения токенов: {e}")
         return "", "", ton_price
 
-async def send_hots(update: Update, context: ContextTypes.DEFAULT_TYPE, min_cap: float, max_cap: float, store: dict, pinned_store: dict, tag: str):
+async def send_hots(update: Update, context: ContextTypes.DEFAULT_TYPE, min_cap: float, max_cap: float, store: dict, pinned_store: dict, tag: str, show_footer: bool = True):
     chat_id = update.effective_chat.id
     old_msg_id = pinned_store.get(chat_id)
     if old_msg_id:
@@ -151,27 +151,37 @@ async def send_hots(update: Update, context: ContextTypes.DEFAULT_TYPE, min_cap:
     store["page"] = page
     store["timestamp"] = timestamp
     store["ton_price"] = ton_price
-    ton_line = f"TON: ${ton_price}" if ton_price else ""
-    message = f"{page}\n\n{ton_line}\n{timestamp}" if ton_line else f"{page}\n\n{timestamp}"
+
+    if show_footer:
+        ton_line = f"TON: ${ton_price}" if ton_price else ""
+        message = f"{page}\n\n{ton_line}\n{timestamp}" if ton_line else f"{page}\n\n{timestamp}"
+    else:
+        message = page
+
     sent = await update.message.reply_text(message, parse_mode=ParseMode.HTML, disable_web_page_preview=True)
     await context.bot.pin_chat_message(chat_id=chat_id, message_id=sent.message_id)
     pinned_store[chat_id] = sent.message_id
 
 async def hots_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    await send_hots(update, context, 3_500, 100_000, latest_hots_result, pinned_hots_messages, "hots")
+    # Сначала крупные (100K+), без футера
+    await send_hots(update, context, 100_000, 10_000_000, latest_bighots_result, pinned_bighots_messages, "bighots", show_footer=False)
+    # Потом средние (3.5K–100K), с футером
+    await send_hots(update, context, 3_500, 100_000, latest_hots_result, pinned_hots_messages, "hots", show_footer=True)
 
-async def bighots_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    await send_hots(update, context, 100_000, 10_000_000, latest_bighots_result, pinned_bighots_messages, "bighots")
-
-async def auto_update(context: ContextTypes.DEFAULT_TYPE, min_cap: float, max_cap: float, store: dict, pinned_store: dict, tag: str):
+async def auto_update(context: ContextTypes.DEFAULT_TYPE, min_cap: float, max_cap: float, store: dict, pinned_store: dict, tag: str, show_footer: bool = True):
     page, timestamp, ton_price = await fetch_tokens(min_cap, max_cap)
     if not page:
         return
     store["page"] = page
     store["timestamp"] = timestamp
     store["ton_price"] = ton_price
-    ton_line = f"TON: ${ton_price}" if ton_price else ""
-    message = f"{page}\n\n{ton_line}\n{timestamp}" if ton_line else f"{page}\n\n{timestamp}"
+
+    if show_footer:
+        ton_line = f"TON: ${ton_price}" if ton_price else ""
+        message = f"{page}\n\n{ton_line}\n{timestamp}" if ton_line else f"{page}\n\n{timestamp}"
+    else:
+        message = page
+
     for chat_id, message_id in pinned_store.items():
         try:
             await context.bot.edit_message_text(chat_id=chat_id, message_id=message_id, text=message, parse_mode=ParseMode.HTML, disable_web_page_preview=True)
@@ -179,15 +189,14 @@ async def auto_update(context: ContextTypes.DEFAULT_TYPE, min_cap: float, max_ca
             logger.warning(f"Не удалось обновить сообщение {tag} в чате {chat_id}: {e}")
 
 async def auto_update_hots(context: ContextTypes.DEFAULT_TYPE):
-    await auto_update(context, 3_500, 100_000, latest_hots_result, pinned_hots_messages, "hots")
+    await auto_update(context, 3_500, 100_000, latest_hots_result, pinned_hots_messages, "hots", show_footer=True)
 
 async def auto_update_bighots(context: ContextTypes.DEFAULT_TYPE):
-    await auto_update(context, 100_000, 10_000_000, latest_bighots_result, pinned_bighots_messages, "bighots")
+    await auto_update(context, 100_000, 10_000_000, latest_bighots_result, pinned_bighots_messages, "bighots", show_footer=False)
 
 if __name__ == '__main__':
     app = ApplicationBuilder().token(BOT_TOKEN).build()
     app.add_handler(CommandHandler("hots", hots_command))
-    app.add_handler(CommandHandler("bighots", bighots_command))
     app.job_queue.run_repeating(auto_update_hots, interval=20, first=20)
     app.job_queue.run_repeating(auto_update_bighots, interval=20, first=25)
     print("Бот запущен...")
