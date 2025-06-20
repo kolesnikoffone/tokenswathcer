@@ -123,7 +123,7 @@ async def fetch_tokens(min_cap: float, max_cap: float):
                     except:
                         name_symbol = f'{symbol}'
 
-                    emoji = "💎" if change >= 100 else "🤑" if change >= 50 else "🚀" if change >= 25 else "💸" if change >= 10 else "📈" if change >= 5 else "🥹" if change > 0 else "🫥" if change > -1 else "📉" if change > -5 else "💔" if change > -10 else "😭" if change > -25 else "🤡"
+                    emoji = "💎" if change >= 100 else "🚀" if change >= 50 else "🔥" if change >= 25 else "📈" if change >= 5 else "🫥" if change > -10 else "📉" if change > -25 else "🤡"
                     growth_str = f"{emoji} {change:+.2f}%"
                     line = f"├{growth_str} • {name_symbol} • {mcap}"
                     result.append(line)
