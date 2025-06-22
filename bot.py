@@ -21,8 +21,8 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 REFERRAL_PREFIX = "213213722_"
-latest_hots_result = {"page": "", "timestamp": "", "ton_price": ""}
-latest_bighots_result = {"page": "", "timestamp": "", "ton_price": ""}
+latest_hots_result = {"page": "", "timestamp": "", "ton_price": "", "sol_price": ""}
+latest_bighots_result = {"page": "", "timestamp": "", "ton_price": "", "sol_price": ""}
 pinned_hots_messages = {}
 pinned_bighots_messages = {}
 
@@ -58,9 +58,22 @@ async def fetch_ton_price():
         logger.warning(f"⚠️ Не удалось получить цену TON с Binance: {e}")
         return ""
 
+async def fetch_sol_price():
+    url = "https://api.binance.com/api/v3/ticker/price?symbol=SOLUSDT"
+    try:
+        async with aiohttp.ClientSession() as session:
+            async with session.get(url) as response:
+                data = await response.json()
+                price = data.get("price", "")
+                return f"{float(price):.2f}" if price else ""
+    except Exception as e:
+        logger.warning(f"⚠️ Не удалось получить цену SOL с Binance: {e}")
+        return ""
+
 async def fetch_tokens(min_cap: float, max_cap: float):
     await update_ignore_list()
     ton_price = await fetch_ton_price()
+    sol_price = await fetch_sol_price()
 
     url = 'https://mempad-domain.blum.codes/api/v1/jetton/sections/hot?published=include&source=all'
     try:
@@ -124,15 +137,15 @@ async def fetch_tokens(min_cap: float, max_cap: float):
                         name_symbol = f'{symbol}'
 
                     emoji = "💎" if change >= 100 else "🚀" if change >= 50 else "🔥" if change >= 25 else "📈" if change >= 5 else "🫥" if change > -10 else "📉" if change > -25 else "🤡"
-                    growth_str = f"{emoji} {change:+.2f}%"
+                    growth_str = f"{emoji} {change:+.0f}%"
                     line = f"├{growth_str} • {name_symbol} • {mcap}"
                     result.append(line)
 
                 timestamp = (datetime.utcnow() + timedelta(hours=3)).strftime("%d.%m.%Y %H:%M:%S")
-                return "\n".join(result), timestamp, ton_price
+                return "\n".join(result), timestamp, ton_price, sol_price
     except Exception as e:
         logger.error(f"Ошибка получения токенов: {e}")
-        return "", "", ton_price
+        return "", "", ton_price, sol_price
 
 async def send_hots(update: Update, context: ContextTypes.DEFAULT_TYPE, min_cap: float, max_cap: float, store: dict, pinned_store: dict, tag: str, show_footer: bool = True):
     chat_id = update.effective_chat.id
@@ -144,17 +157,20 @@ async def send_hots(update: Update, context: ContextTypes.DEFAULT_TYPE, min_cap:
         except Exception as e:
             logger.warning(f"Не удалось удалить старое сообщение {tag}: {e}")
 
-    page, timestamp, ton_price = await fetch_tokens(min_cap, max_cap)
+    page, timestamp, ton_price, sol_price = await fetch_tokens(min_cap, max_cap)
     if not page:
         return
 
     store["page"] = page
     store["timestamp"] = timestamp
     store["ton_price"] = ton_price
+    store["sol_price"] = sol_price
 
     if show_footer:
         ton_line = f"TON: ${ton_price}" if ton_price else ""
-        message = f"{page}\n\n{ton_line}\n{timestamp}" if ton_line else f"{page}\n\n{timestamp}"
+        sol_line = f"SOL: ${sol_price}" if sol_price else ""
+        footer = " • ".join(filter(None, [ton_line, sol_line]))
+        message = f"{page}\n\n{footer}\n{timestamp}" if footer else f"{page}\n\n{timestamp}"
     else:
         message = page
 
@@ -163,22 +179,23 @@ async def send_hots(update: Update, context: ContextTypes.DEFAULT_TYPE, min_cap:
     pinned_store[chat_id] = sent.message_id
 
 async def hots_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    # Сначала крупные (100K+), без футера
     await send_hots(update, context, 100_000, 10_000_000, latest_bighots_result, pinned_bighots_messages, "bighots", show_footer=False)
-    # Потом средние (3.5K–100K), с футером
     await send_hots(update, context, 3_500, 100_000, latest_hots_result, pinned_hots_messages, "hots", show_footer=True)
 
 async def auto_update(context: ContextTypes.DEFAULT_TYPE, min_cap: float, max_cap: float, store: dict, pinned_store: dict, tag: str, show_footer: bool = True):
-    page, timestamp, ton_price = await fetch_tokens(min_cap, max_cap)
+    page, timestamp, ton_price, sol_price = await fetch_tokens(min_cap, max_cap)
     if not page:
         return
     store["page"] = page
     store["timestamp"] = timestamp
     store["ton_price"] = ton_price
+    store["sol_price"] = sol_price
 
     if show_footer:
         ton_line = f"TON: ${ton_price}" if ton_price else ""
-        message = f"{page}\n\n{ton_line}\n{timestamp}" if ton_line else f"{page}\n\n{timestamp}"
+        sol_line = f"SOL: ${sol_price}" if sol_price else ""
+        footer = " • ".join(filter(None, [ton_line, sol_line]))
+        message = f"{page}\n\n{footer}\n{timestamp}" if footer else f"{page}\n\n{timestamp}"
     else:
         message = page
 
